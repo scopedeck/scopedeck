@@ -1,0 +1,9 @@
+<Project>
+  <!-- Overridden by the release workflow from the git tag: -p:Version=0.1.0-rc.1 -->
+  <PropertyGroup>
+    <Version>0.1.0-dev</Version>
+    <Authors>yuriikostenko</Authors>
+    <Product>SDS Remote</Product>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>

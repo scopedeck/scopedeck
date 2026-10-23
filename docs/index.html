@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SDS Remote — remote control for Siglent SDS1000X-E oscilloscopes</title>
+  <meta name="description" content="Open-source, modern replacement for EasyScopeX: live waveforms, cursors, FFT, measurements and full-memory capture for Siglent SDS1000X-E oscilloscopes over LAN. No VISA drivers needed." />
+  <meta property="og:title" content="SDS Remote" />
+  <meta property="og:description" content="Modern remote control for Siglent SDS1000X-E oscilloscopes over LAN." />
+  <meta property="og:image" content="https://sds-remote.github.io/sds-remote/images/live-cursors.png" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111418'/><path d='M3 20 Q8 4 13 16 T23 14 T29 10' stroke='%23f5d742' stroke-width='3' fill='none'/></svg>" />
+  <style>
+    :root {
+      --bg: #0d1014;
+      --surface: #151a20;
+      --border: #29313b;
+      --text: #d7dde4;
+      --muted: #8f9aa8;
+      --accent: #4fa3ff;
+      --yellow: #f5d742;
+      --magenta: #e85ce8;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+    header { padding: 72px 0 40px; text-align: center; }
+    .logo {
+      width: 64px; height: 64px; border-radius: 14px; margin: 0 auto 20px;
+      background: #111418 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g'%3E%3Cstop offset='0' stop-color='%23f5d742'/%3E%3Cstop offset='1' stop-color='%23e85ce8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M3 20 Q8 4 13 16 T23 14 T29 10' stroke='url(%23g)' stroke-width='2.5' fill='none'/%3E%3C/svg%3E") center/80% no-repeat;
+      border: 1px solid var(--border);
+    }
+    h1 { font-size: clamp(34px, 6vw, 52px); line-height: 1.1; margin: 0 0 14px; letter-spacing: -0.02em; }
+    h1 span {
+      background: linear-gradient(90deg, var(--yellow), var(--magenta));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .tagline { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 28px; }
+    .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 22px; border-radius: 8px; font-weight: 600; text-decoration: none;
+      border: 1px solid var(--border); color: var(--text); background: var(--surface);
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn:hover { filter: brightness(1.12); }
+    .small { font-size: 14px; color: var(--muted); margin-top: 14px; }
+
+    .shot {
+      display: block; width: 100%; height: auto;
+      border-radius: 12px; border: 1px solid var(--border);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    }
+    figure { margin: 0; }
+    figcaption { color: var(--muted); font-size: 14px; text-align: center; margin-top: 10px; }
+
+    section { padding: 64px 0 0; }
+    h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+    .lead { color: var(--muted); margin: 0 0 28px; max-width: 760px; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+    .card h3 { margin: 0 0 6px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+
+    ol.steps { padding-left: 22px; margin: 0; }
+    ol.steps li { margin-bottom: 10px; }
+    code {
+      font: 14px ui-monospace, Consolas, monospace;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+
+    footer { margin: 72px 0 0; padding: 28px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+    footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <div class="logo" aria-hidden="true"></div>
+    <h1><span>SDS Remote</span></h1>
+    <p class="tagline">A modern, open-source replacement for EasyScopeX. Control your Siglent SDS1000X-E oscilloscope over the network — no VISA drivers, no LabVIEW.</p>
+    <div class="buttons">
+      <a class="btn primary" href="https://github.com/sds-remote/sds-remote/releases">Download</a>
+      <a class="btn" href="https://github.com/sds-remote/sds-remote">Source on GitHub</a>
+    </div>
+    <p class="small">Windows desktop app · server + browser UI for Linux and macOS · MIT license</p>
+  </header>
+
+  <div class="wrap">
+    <figure>
+      <img class="shot" src="images/live-cursors.png" width="2880" height="1720"
+           alt="SDS Remote showing a 1 kHz square wave with time and voltage cursors and the scope's measurements" />
+      <figcaption>Live view of an SDS1202X-E with cursors and the scope's own measurements.</figcaption>
+    </figure>
+
+    <section>
+      <h2>Features</h2>
+      <p class="lead">Everything you use day to day, in one fast window. Tested on an SDS1202X-E with firmware 1.3.27.</p>
+      <div class="grid">
+        <div class="card"><h3>Live waveforms</h3><p>Both channels at up to ~20 fps over LAN, with ground, trigger position and trigger level markers.</p></div>
+        <div class="card"><h3>Full control</h3><p>Run mode, auto setup, timebase, delay, trigger source/slope/coupling/level, V/div, offset, coupling and probe per channel.</p></div>
+        <div class="card"><h3>Cursors</h3><p>Draggable time and voltage cursors with ΔT, 1/ΔT, ΔV and each channel's value at the cursors.</p></div>
+        <div class="card"><h3>FFT</h3><p>Spectrum in dBV with Hann, Hamming, Blackman-Harris, flat-top or rectangular window, zoom and peak marker.</p></div>
+        <div class="card"><h3>Measurements</h3><p>Fast app-side measurements every frame, or the scope's own: rise/fall time, overshoot, pulse width and more.</p></div>
+        <div class="card"><h3>Full-memory capture</h3><p>Download all samples — up to 14 million per channel — as CSV. Log measurements over time.</p></div>
+        <div class="card"><h3>Screenshots &amp; export</h3><p>Grab the scope's own screen as PNG, export the displayed waveform as CSV or the plot as PNG.</p></div>
+        <div class="card"><h3>SCPI console</h3><p>Send any command from Siglent's programming guide and see the response.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="pair">
+        <figure>
+          <img class="shot" src="images/fft.png" width="2880" height="1720" loading="lazy"
+               alt="FFT of the 1 kHz calibrator signal showing odd harmonics" />
+          <figcaption>FFT of the 1 kHz calibrator output.</figcaption>
+        </figure>
+        <figure>
+          <img class="shot" src="images/scope-screen.png" width="2880" height="1720" loading="lazy"
+               alt="The oscilloscope's own screen captured through SDS Remote" />
+          <figcaption>The scope's screen, captured with one click.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>Get started</h2>
+      <p class="lead">Connect the oscilloscope to your network and note its IP address (shown in the LAN settings of the Utility menu).</p>
+      <div class="pair">
+        <div class="card">
+          <h3>Windows</h3>
+          <ol class="steps">
+            <li>Download <code>SDS-Remote-…-windows-x64-standalone.zip</code> from <a href="https://github.com/sds-remote/sds-remote/releases">Releases</a>.</li>
+            <li>Unzip and start <code>SDS Remote.exe</code>.</li>
+            <li>Enter the scope's IP address and click <b>Connect</b>.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Linux &amp; macOS</h3>
+          <ol class="steps">
+            <li>Download the <code>SDS-Remote-server-…</code> archive for your platform.</li>
+            <li>Unpack it and run <code>./Siglent.Server</code>.</li>
+            <li>Open <a href="http://localhost:5180">http://localhost:5180</a> in your browser and connect.</li>
+          </ol>
+        </div>
+      </div>
+      <p class="small">The scope talks to one program at a time — close EasyScopeX before connecting.</p>
+    </section>
+
+    <section>
+      <h2>Supported oscilloscopes</h2>
+      <p class="lead">SDS Remote uses plain SCPI over TCP (port 5025), which the Siglent SDS1000X-E series supports out of the box.</p>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Model</th><th>Status</th></tr>
+          <tr><td>SDS1202X-E</td><td>Tested (firmware 1.3.27)</td></tr>
+          <tr><td>SDS1102X-E, SDS1104X-E, SDS1204X-E</td><td>Expected to work — same command set; reports welcome</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>SDS Remote is open source under the MIT license. <a href="https://github.com/sds-remote/sds-remote/issues">Report an issue</a> · <a href="https://github.com/sds-remote/sds-remote/blob/main/ROADMAP.md">Roadmap</a></p>
+      <p>Not affiliated with or endorsed by Siglent Technologies. Siglent and EasyScopeX are trademarks of their respective owners.</p>
+    </footer>
+  </div>
+</body>
+</html>

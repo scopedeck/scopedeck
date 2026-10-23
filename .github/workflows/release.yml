@@ -1,0 +1,85 @@
+name: Release
+
+# Push a tag like v0.1.0 or v0.1.0-rc.1 to build, test and publish a GitHub Release.
+# Tags with a suffix (-rc.1, -beta…) are published as pre-releases.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Version from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - run: npm ci
+        working-directory: web
+
+      - name: Test
+        run: dotnet test -c Release -p:Version=${{ env.VERSION }}
+
+      - name: Build packages
+        shell: pwsh
+        run: |
+          $v = $env:VERSION
+          New-Item -ItemType Directory -Force out, assets | Out-Null
+
+          # Windows desktop app: small (needs .NET 10 runtimes) and self-contained.
+          dotnet publish src/Siglent.Desktop -c Release -p:Version=$v -o out/win --self-contained false
+          dotnet publish src/Siglent.Desktop -c Release -p:Version=$v -o out/win-sc --self-contained true -p:EnableCompressionInSingleFile=true
+          Compress-Archive -Path out/win/* -DestinationPath "assets/SDS-Remote-$v-windows-x64.zip"
+          Compress-Archive -Path out/win-sc/* -DestinationPath "assets/SDS-Remote-$v-windows-x64-standalone.zip"
+
+          # Server + browser UI for every platform (self-contained single file).
+          foreach ($rid in "linux-x64", "linux-arm64", "osx-arm64", "osx-x64", "win-x64") {
+            $dir = "out/server-$rid"
+            dotnet publish src/Siglent.Server -c Release -r $rid -p:Version=$v -o $dir --self-contained true `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none
+            Remove-Item "$dir/*.pdb", "$dir/appsettings.Development.json", "$dir/*.staticwebassets.*" -ErrorAction SilentlyContinue
+            if ($rid -like "win-*") {
+              Compress-Archive -Path "$dir/*" -DestinationPath "assets/SDS-Remote-server-$v-$rid.zip"
+            } else {
+              # tar keeps the executable bit for Linux/macOS.
+              tar -czf "assets/SDS-Remote-server-$v-$rid.tar.gz" -C $dir .
+            }
+          }
+          Get-ChildItem assets | Format-Table Name, Length
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## Downloads
+
+          | File | For |
+          | --- | --- |
+          | ``SDS-Remote-$env:VERSION-windows-x64.zip`` | Windows desktop app. Needs the [.NET 10 Desktop Runtime and ASP.NET Core Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). |
+          | ``SDS-Remote-$env:VERSION-windows-x64-standalone.zip`` | Windows desktop app, no .NET installation needed (larger). |
+          | ``SDS-Remote-server-$env:VERSION-<platform>`` | Server + browser UI for Linux, macOS and Windows; no .NET needed. Run it and open http://localhost:5180. |
+
+          See the [README](https://github.com/${{ github.repository }}#readme) for details.
+          "@
+          $tag = "${{ github.ref_name }}"
+          $ghArgs = @("release", "create", $tag) + (Get-ChildItem assets).FullName +
+                    @("--title", "SDS Remote $tag", "--notes", $notes, "--generate-notes")
+          if ($tag -match "-") { $ghArgs += "--prerelease" }
+          gh @ghArgs

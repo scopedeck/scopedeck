@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SDS Remote</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111418'/><path d='M3 20 Q8 4 13 16 T23 14 T29 10' stroke='%23f5d742' stroke-width='3' fill='none'/></svg>" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark"></span>SDS Remote <span id="version" class="version"></span></div>
+      <form id="connect-form" class="connect">
+        <input id="host" placeholder="Scope IP address" autocomplete="off" spellcheck="false" />
+        <button id="connect-btn" type="submit">Connect</button>
+      </form>
+      <div id="status" class="status"><span class="dot"></span><span id="status-text">Disconnected</span></div>
+    </header>
+
+    <main class="layout">
+      <section class="display-area">
+        <div class="display-head">
+          <div id="acq-status" class="acq-status">—</div>
+          <div id="info-line" class="info-line"></div>
+        </div>
+        <div id="plot-wrap" class="plot-wrap">
+          <canvas id="plot"></canvas>
+          <div id="readout" class="readout" hidden></div>
+          <div id="cursor-info" class="readout cursor-info" hidden></div>
+          <div id="placeholder" class="placeholder">Connect to the oscilloscope to see live waveforms.</div>
+        </div>
+        <div class="toolbar">
+          <button id="live-btn" class="toggle on" title="Pause or resume live view (Space)">Live</button>
+          <label class="inline" title="Drag cursor lines on the plot">Cursors
+            <select id="cursor-mode">
+              <option value="off">Off</option>
+              <option value="time">Time</option>
+              <option value="volt">Voltage</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+          <select id="cursor-ref" title="Channel the voltage cursors measure" hidden></select>
+          <button id="fft-btn" class="toggle" title="Show the spectrum of a channel">FFT</button>
+          <span class="sep"></span>
+          <button id="screenshot-btn" title="Capture the scope's screen">Screenshot</button>
+          <button id="csv-btn" title="Download the displayed waveform as CSV">Export CSV</button>
+          <button id="capture-btn" title="Download the scope's full acquisition memory (all samples) as CSV. A running scope is paused during the transfer.">Capture memory</button>
+          <button id="log-btn" class="toggle" title="Record measurements of every frame; click again to stop and download CSV">Log</button>
+          <button id="png-btn" title="Save this plot as PNG">Save plot</button>
+          <span class="spacer"></span>
+          <label class="inline">Points
+            <select id="points">
+              <option value="1000">1k</option>
+              <option value="2000" selected>2k</option>
+              <option value="5000">5k</option>
+              <option value="20000">20k</option>
+            </select>
+          </label>
+          <span id="fps" class="muted"></span>
+        </div>
+        <section id="spectrum-panel" class="spectrum-panel" hidden>
+          <div class="spectrum-head">
+            <label class="inline">Source <select id="fft-source"></select></label>
+            <label class="inline">Window <select id="fft-window"></select></label>
+            <label class="inline">Span
+              <select id="fft-span">
+                <option value="1">Full</option>
+                <option value="0.5">1/2</option>
+                <option value="0.2">1/5</option>
+                <option value="0.1">1/10</option>
+                <option value="0.05">1/20</option>
+                <option value="0.02">1/50</option>
+                <option value="0.01">1/100</option>
+              </select>
+            </label>
+            <span id="fft-info" class="muted"></span>
+            <span class="spacer"></span>
+            <span id="fft-readout" class="mono"></span>
+          </div>
+          <div class="spectrum-wrap"><canvas id="spectrum"></canvas></div>
+        </section>
+        <div class="measure-head">
+          <span>Measurements by</span>
+          <div class="seg seg-small" id="measure-source">
+            <button data-source="app" class="active" title="Computed in the app from the transferred samples, every frame">App</button>
+            <button data-source="scope" title="The scope's own measurements on full memory (slower, ~0.5 s per channel)">Scope</button>
+          </div>
+        </div>
+        <div id="measurements" class="measurements"></div>
+        <details class="console">
+          <summary>SCPI console</summary>
+          <div id="console-log" class="console-log"></div>
+          <form id="console-form" class="console-form">
+            <input id="console-input" placeholder="e.g. C1:PAVA? FREQ   ·   queries end with ?" autocomplete="off" spellcheck="false" />
+            <button type="submit">Send</button>
+          </form>
+        </details>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Acquisition</h2>
+          <div class="seg" id="trig-mode">
+            <button data-mode="AUTO">Auto</button>
+            <button data-mode="NORM">Normal</button>
+            <button data-mode="SINGLE">Single</button>
+            <button data-mode="STOP" class="danger">Stop</button>
+          </div>
+          <button id="autosetup-btn" class="wide">Auto setup</button>
+        </section>
+
+        <section class="panel">
+          <h2>Horizontal</h2>
+          <div class="row">
+            <label>Time/div</label>
+            <div class="stepper">
+              <button data-step="tdiv" data-dir="-1" aria-label="Faster timebase">‹</button>
+              <select id="tdiv"></select>
+              <button data-step="tdiv" data-dir="1" aria-label="Slower timebase">›</button>
+            </div>
+          </div>
+          <div class="row">
+            <label for="trdl">Delay</label>
+            <div class="unit-input"><input id="trdl" type="number" step="any" /><span>s</span></div>
+          </div>
+          <div class="row"><label>Sample rate</label><span id="sara" class="value">—</span></div>
+        </section>
+
+        <section class="panel">
+          <h2>Trigger</h2>
+          <div class="row">
+            <label for="trig-source">Source</label>
+            <select id="trig-source"></select>
+          </div>
+          <div class="row">
+            <label for="trig-slope">Slope</label>
+            <select id="trig-slope">
+              <option value="POS">Rising</option>
+              <option value="NEG">Falling</option>
+              <option value="WINDOW">Either</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="trig-coupling">Coupling</label>
+            <select id="trig-coupling">
+              <option value="DC">DC</option>
+              <option value="AC">AC</option>
+              <option value="LFREJ">LF reject</option>
+              <option value="HFREJ">HF reject</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="trig-level">Level</label>
+            <div class="unit-input"><input id="trig-level" type="number" step="any" /><span>V</span></div>
+          </div>
+        </section>
+
+        <div id="channels"></div>
+      </aside>
+    </main>
+
+    <dialog id="shot-dialog" class="shot-dialog">
+      <img id="shot-img" alt="Oscilloscope screen" />
+      <div class="dialog-actions">
+        <button id="shot-save">Save PNG</button>
+        <button id="shot-close">Close</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
