@@ -38,8 +38,142 @@ public sealed class SimulatorTests : IAsyncLifetime
 
         Assert.Equal(500e-6, s.TimePerDiv, 1e-12);
         Assert.Equal(-1e-4, s.TriggerDelay, 1e-12);
-        Assert.Equal(new ChannelSettings(2, true, 0.5, -1, "A1M", 1), s.Channels[1]);
-        Assert.Equal(new TriggerSettings("NORM", "EDGE", "C2", "NEG", 1.65, "DC"), s.Trigger);
+        Assert.Equal(new ChannelSettings(2, true, 0.5, -1, "A1M", 1, false), s.Channels[1]);
+        Assert.Equal(new TriggerSettings("NORM", "EDGE", "C2", "NEG", 1.65, "DC", "OFF", null, null, null), s.Trigger);
+    }
+
+    [Fact]
+    public async Task ChangingTriggerSourceKeepsTypeAndCondition()
+    {
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(Type: "GLIT", HoldType: "P2", HoldValue: 1e-4, HoldValue2: 8e-4));
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(Source: "C2"));
+
+        var t = (await _scope.GetSettingsAsync()).Trigger;
+
+        Assert.Equal(("GLIT", "C2", "P2"), (t.Type, t.Source, t.HoldType));
+        Assert.Equal(1e-4, t.HoldValue!.Value, 1e-12);
+        Assert.Equal(8e-4, t.HoldValue2!.Value, 1e-12);
+    }
+
+    [Fact]
+    public async Task SetsEdgeHoldoffSlopeTriggerAndLowLevel()
+    {
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(HoldType: "TI", HoldValue: 1e-3));
+        Assert.Equal("EDGE,SR,C1,HT,TI,HV,1.00E-03s", ScpiValue.StripHeader((await _scope.SendRawAsync("TRSE?"))!));
+
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(Type: "SLEW", Level: 1, Level2: -1));
+        var t = (await _scope.GetSettingsAsync()).Trigger;
+        Assert.Equal(("SLEW", "IS"), (t.Type, t.HoldType));
+        Assert.Equal((1.0, -1.0), (t.Level, t.Level2));
+    }
+
+    [Fact]
+    public async Task ChangesAcquisitionAndBandwidthLimit()
+    {
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "average", Averages: 64, MemoryDepth: "700k", SinXInterpolation: false));
+        await _scope.UpdateChannelAsync(1, new ChannelUpdate(BandwidthLimit: true));
+
+        var s = await _scope.GetSettingsAsync();
+
+        Assert.Equal(new AcquisitionSettings("AVERAGE", 64, "700K", false), s.Acquisition);
+        Assert.True(s.Channels[0].BandwidthLimit);
+        Assert.False(s.Channels[1].BandwidthLimit);
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(MemoryDepth: "5M")));
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Averages: 5)));
+    }
+
+    [Fact]
+    public async Task ReadingSettingsDoesNotSwitchToAverageMode()
+    {
+        // Regression: FW 1.3.27 switches to average mode when queried with AVGA?.
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "SAMPLING"));
+        await _scope.GetSettingsAsync();
+
+        Assert.Equal("SAMPLING", (await _scope.GetSettingsAsync()).Acquisition.Mode);
+    }
+
+    [Fact]
+    public async Task AverageCountIsSetTogetherWithTheMode()
+    {
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "AVERAGE", Averages: 128));
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "SAMPLING"));
+        Assert.Equal(128, (await _scope.GetSettingsAsync()).Acquisition.Averages);
+
+        // Switching back to average without a count reuses the last one.
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "AVERAGE"));
+        Assert.Equal("AVERAGE,128", ScpiValue.StripHeader((await _scope.SendRawAsync("ACQW?"))!));
+    }
+
+    [Fact]
+    public async Task HistoryStaysOffInAverageMode()
+    {
+        await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "AVERAGE", Averages: 16));
+
+        Assert.False((await _scope.SetHistoryAsync(true)).Enabled);
+    }
+
+    [Fact]
+    public async Task BrowsesAndExportsHistoryFrames()
+    {
+        Assert.False((await _scope.GetSettingsAsync()).History.Enabled);
+
+        var on = await _scope.SetHistoryAsync(true);
+        Assert.Equal((true, 40, 40), (on.Enabled, on.Frame, on.FrameCount));
+
+        var fifth = await _scope.SetHistoryFrameAsync(5);
+        Assert.Equal((5, "00:12:15.006170"), (fifth.Frame, fifth.FrameTime));
+
+        var exported = new List<(int, string?)>();
+        await _scope.ExportHistoryAsync(200, (i, time, frame) =>
+        {
+            Assert.Equal(2, frame.Channels.Count);
+            exported.Add((i, time));
+            return Task.CompletedTask;
+        });
+        Assert.Equal(Enumerable.Range(1, 40), exported.Select(e => e.Item1));
+        Assert.Equal(5, (await _scope.GetSettingsAsync()).History.Frame);
+
+        Assert.False((await _scope.SetHistoryAsync(false)).Enabled);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _scope.ExportHistoryAsync(200, (_, _, _) => Task.CompletedTask));
+    }
+
+    [Fact]
+    public async Task HistoryFrameCountIsProbedWhenEnabledOnTheScope()
+    {
+        // History switched on at the front panel: the app did not see FRAM? right after HSMD ON.
+        await _scope.SendRawAsync("HSMD ON");
+        await _scope.SendRawAsync("FRAM 7");
+
+        var h = (await _scope.GetSettingsAsync()).History;
+
+        Assert.Equal((7, 40), (h.Frame, h.FrameCount));
+    }
+
+    [Fact]
+    public async Task SavesAndLoadsSetupFile()
+    {
+        var setup = await _scope.GetSetupAsync();
+        Assert.StartsWith("<?xml", System.Text.Encoding.ASCII.GetString(setup));
+        await _scope.UpdateTimebaseAsync(new TimebaseUpdate(TimePerDiv: 5e-3));
+
+        await _scope.LoadSetupAsync(setup);
+
+        Assert.Equal(200e-6, (await _scope.GetSettingsAsync()).TimePerDiv, 1e-12);
+    }
+
+    [Fact]
+    public async Task StoresAndRecallsInternalMemories()
+    {
+        await _scope.UpdateTimebaseAsync(new TimebaseUpdate(TimePerDiv: 1e-3));
+        await _scope.SaveSetupToMemoryAsync(3);
+        await _scope.UpdateTimebaseAsync(new TimebaseUpdate(TimePerDiv: 5e-3));
+
+        await _scope.RecallSetupFromMemoryAsync(3);
+        Assert.Equal(1e-3, (await _scope.GetSettingsAsync()).TimePerDiv, 1e-12);
+
+        await _scope.RecallSetupFromMemoryAsync(0);
+        Assert.Equal(200e-6, (await _scope.GetSettingsAsync()).TimePerDiv, 1e-12);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _scope.SaveSetupToMemoryAsync(0));
     }
 
     [Fact]
@@ -57,7 +191,7 @@ public sealed class SimulatorTests : IAsyncLifetime
         Assert.Equal(2, frame.Channels.Count);
         var c1 = frame.Channels[0];
         Assert.InRange(c1.Volts.Length, 1900, 2000);
-        Assert.Equal(1.4e6, c1.MemoryPoints);
+        Assert.Equal(700_000, c1.MemoryPoints);
         // 14 divisions of 200 µs should be covered by the decimated samples.
         Assert.Equal(14 * 200e-6, c1.Volts.Length * c1.SampleInterval, 2e-5);
         Assert.InRange(c1.Volts.Max(), 1.45, 1.6);
@@ -90,7 +224,7 @@ public sealed class SimulatorTests : IAsyncLifetime
     {
         var frame = await _scope.CaptureMemoryAsync();
 
-        Assert.All(frame.Channels, c => Assert.Equal(1_400_000, c.Volts.Length));
+        Assert.All(frame.Channels, c => Assert.Equal(700_000, c.Volts.Length));
         Assert.Equal(1 / frame.SampleRate, frame.Channels[0].SampleInterval, 1e-15);
         Assert.Equal("AUTO", await _scope.SendRawAsync("TRMD?"));
     }

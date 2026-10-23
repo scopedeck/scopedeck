@@ -2,6 +2,11 @@ import type { ScopeSettings, WaveformFrame } from "./api";
 import { si } from "./format";
 
 export const CHANNEL_COLORS = ["#f5d742", "#e85ce8", "#4fc3f7", "#5ee08a"];
+export const MATH_COLOR = "#e8edf2";
+
+/** Channel 0 is the app-side math trace. */
+export const channelColor = (ch: number) => (ch === 0 ? MATH_COLOR : CHANNEL_COLORS[ch - 1]);
+export const channelName = (ch: number) => (ch === 0 ? "M" : `C${ch}`);
 export const H_DIVS = 14;
 export const V_DIVS = 8;
 const GRID = "rgba(150, 160, 175, 0.22)";
@@ -149,7 +154,7 @@ export class ScopePlot {
     ctx.rect(a.x, a.y, a.w, a.h);
     ctx.clip();
     for (const wf of frame.channels) {
-      const color = CHANNEL_COLORS[wf.channel - 1];
+      const color = channelColor(wf.channel);
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.25;
       ctx.shadowColor = color;
@@ -169,7 +174,7 @@ export class ScopePlot {
     // Ground markers on the left edge.
     for (const wf of frame.channels) {
       const y = this.yOfVolt(0, wf.channel)!;
-      this.marker(a.x - 1, clamp(y, a.y, a.y + a.h), "right", CHANNEL_COLORS[wf.channel - 1], String(wf.channel));
+      this.marker(a.x - 1, clamp(y, a.y, a.y + a.h), "right", channelColor(wf.channel), wf.channel === 0 ? "M" : String(wf.channel));
     }
 
     // Trigger position (top) and level (right edge).
@@ -216,7 +221,7 @@ export class ScopePlot {
       });
     }
     if (mode === "volt" || mode === "both") {
-      const color = CHANNEL_COLORS[ref - 1];
+      const color = channelColor(ref);
       v.forEach((volt, i) => {
         const y = this.yOfVolt(volt, ref);
         if (y === null || y < a.y || y > a.y + a.h) return;
@@ -254,7 +259,7 @@ export class ScopePlot {
     const t = this.timeAtX(this.hoverX);
     const values = this.frame.channels.map((wf) => {
       const v = this.valueAt(wf.channel, t);
-      return { channel: wf.channel, text: v === undefined ? "—" : si(v, "V", 4) };
+      return { channel: wf.channel, text: v === undefined ? "—" : si(v, wf.unit ?? "V", 4) };
     });
     return { time: si(t, "s", 4), values };
   }

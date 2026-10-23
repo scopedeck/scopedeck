@@ -62,6 +62,10 @@ public static class SiglentServer
             {
                 return Results.Problem(e.Message, statusCode: StatusCodes.Status400BadRequest);
             }
+            catch (InvalidOperationException e)
+            {
+                return Results.Problem(e.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         string version = typeof(SiglentServer).Assembly
@@ -136,6 +140,72 @@ public static class SiglentServer
             return Results.NoContent();
         });
 
+        api.MapPost("/acquisition", async (AcquisitionUpdate update, ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.UpdateAcquisitionAsync(update, ct));
+            return Results.NoContent();
+        });
+
+        api.MapPost("/trigger/set50", async (ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.SetTriggerLevelTo50PercentAsync(ct));
+            return Results.NoContent();
+        });
+
+        // ---------- history ----------
+
+        api.MapPost("/history", (HistoryRequest request, ScopeService scope, CancellationToken ct) =>
+            scope.RunAsync(s => s.SetHistoryAsync(request.Enabled, ct)));
+
+        api.MapPost("/history/frame", (HistoryFrameRequest request, ScopeService scope, CancellationToken ct) =>
+            scope.RunAsync(s => s.SetHistoryFrameAsync(request.Frame, ct)));
+
+        api.MapGet("/history/export", (ScopeService scope, int? maxPoints, CancellationToken ct) =>
+            Results.Stream(async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new UTF8Encoding(false), bufferSize: 1 << 16);
+                bool header = true;
+                await scope.RunAsync(s => s.ExportHistoryAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), async (index, time, frame) =>
+                {
+                    if (header)
+                    {
+                        await writer.WriteAsync("frame,frame_time,time_s," + string.Join(',', frame.Channels.Select(c => $"C{c.Channel}_V")) + "\n");
+                        header = false;
+                    }
+                    await WriteRowsAsync(writer, frame, $"{index},{time},");
+                }, ct));
+            }, "text/csv", $"history-{DateTime.Now:yyyyMMdd-HHmmss}.csv"));
+
+        // ---------- setups ----------
+
+        api.MapGet("/setup", async (ScopeService scope, CancellationToken ct) =>
+        {
+            var setup = await scope.RunAsync(s => s.GetSetupAsync(ct));
+            bool xml = setup.AsSpan().StartsWith("<?xml"u8);
+            return Results.File(setup, xml ? "application/xml" : "application/octet-stream",
+                $"scope-setup-{DateTime.Now:yyyyMMdd-HHmmss}.{(xml ? "xml" : "bin")}");
+        });
+
+        api.MapPost("/setup", async (HttpRequest request, ScopeService scope, CancellationToken ct) =>
+        {
+            using var body = new MemoryStream();
+            await request.Body.CopyToAsync(body, ct);
+            await scope.RunAsync(s => s.LoadSetupAsync(body.ToArray(), ct));
+            return Results.NoContent();
+        });
+
+        api.MapPost("/setup/memory/{slot:int}/save", async (int slot, ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.SaveSetupToMemoryAsync(slot, ct));
+            return Results.NoContent();
+        });
+
+        api.MapPost("/setup/memory/{slot:int}/recall", async (int slot, ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.RecallSetupFromMemoryAsync(slot, ct));
+            return Results.NoContent();
+        });
+
         api.MapPost("/scpi", async (ScpiRequest request, ScopeService scope, CancellationToken ct) =>
             new { Response = await scope.RunAsync(s => s.SendRawAsync(request.Command.Trim(), ct)) });
     }
@@ -145,13 +215,21 @@ public static class SiglentServer
     {
         await using var writer = new StreamWriter(stream, new UTF8Encoding(false), bufferSize: 1 << 20);
         await writer.WriteAsync("time_s," + string.Join(',', frame.Channels.Select(c => $"C{c.Channel}_V")) + "\n");
+        await WriteRowsAsync(writer, frame, "");
+    }
+
+    /// <summary>Writes one "prefix,time,C1,C2" row per sample.</summary>
+    private static async Task WriteRowsAsync(StreamWriter writer, WaveformFrame frame, string prefix)
+    {
+        if (frame.Channels.Count == 0) return;
         var first = frame.Channels[0];
         int rows = frame.Channels.Max(c => c.Volts.Length);
-        var line = new char[32 * (frame.Channels.Count + 1)];
+        var line = new char[prefix.Length + 32 * (frame.Channels.Count + 1)];
+        prefix.CopyTo(line);
         var inv = CultureInfo.InvariantCulture;
         for (int i = 0; i < rows; i++)
         {
-            int n = 0;
+            int n = prefix.Length;
             (first.FirstPointTime + i * first.SampleInterval).TryFormat(line.AsSpan(n), out int w, "E8", inv);
             n += w;
             foreach (var c in frame.Channels)
@@ -171,3 +249,5 @@ public static class SiglentServer
 
 public record ConnectRequest(string Host, int? Port);
 public record ScpiRequest(string Command);
+public record HistoryRequest(bool Enabled);
+public record HistoryFrameRequest(int Frame);

@@ -3,18 +3,21 @@
 Scope features that the SDS1000X-E remote command set supports (programming guide PG01-E02C) and that
 ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (digital/MSO channels) are left out.
 
-## Next release (RC 2)
+## Done in RC 2
 
-1. **Acquisition settings** — mode Normal / Peak detect / Average (with count) / High-res (`ACQW`, `AVGA`),
-   memory depth 14k…14M (`MSIZ`), 20 MHz bandwidth limit per channel (`BWL`), interpolation sin(x)/x vs linear (`SXSA`).
-2. **More trigger types** — pulse width, slope, interval, runt, dropout, window, video (`TRSE` with its
-   pair parameters), holdoff, second level (`TRLV2`), and a "50 %" level button (`SET50`).
-3. **Math channel** — read and draw `MATH:WF?` (A+B, A−B, A×B, A/B, d/dt, ∫dt, √) as a third trace with its own
-   scale (`MTVD`, `MTVP`, `DEF`).
-4. **History mode** — browse the stored acquisitions frame by frame with timestamps and export them all
-   (`HSMD`, `FRAM`, `FTIM?`). This is the scope's own "long recording" feature.
-5. **Setups on the PC** — save/restore the complete panel setup as a file (`PNSU`), plus the internal memories
-   (`*SAV`, `*RCL`).
+- **Acquisition settings** — mode Normal / Peak detect / Average ×4…×1024 / High-res, memory depth, 20 MHz bandwidth
+  limit per channel, interpolation (`ACQW`, `MSIZ`, `BWL`, `SXSA`; `AVGA?` is avoided, see README).
+- **More trigger types** — pulse width, slope, interval, runt, dropout with conditions, edge holdoff, low level
+  (`TRLV2`), "50 %" button (`SET50`). The trigger source can be changed without resetting the type.
+- **Math** — computed in the app (A+B, A−B, A×B, A÷B, d/dt, ∫dt, √) instead of the scope's `MATH:WF?`, because the
+  scope's math display cannot be switched off remotely.
+- **History mode** — browse, play back and export the stored acquisitions (`HSMD`, `FRAM`, `FTIM?`).
+- **Setups** — save/load setup files (`PNSU`), scope memories 1–20 (`*SAV`, `*RCL`), default setup (`*RCL 0`).
+
+## Next
+
+- **Video trigger** (`TRSE TV` with standard, sync, line, field) — currently shown but has to be set up on the scope.
+- **Window trigger** (`TRWI`) and pattern trigger.
 
 ## Later
 

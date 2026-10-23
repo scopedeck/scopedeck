@@ -1,9 +1,10 @@
 import "./style.css";
-import { api, ApiError, type ChannelSettings, type ScopeSettings, type WaveformFrame } from "./api";
+import { api, ApiError, type ChannelSettings, type HistoryState, type ScopeSettings, type TriggerSettings, type WaveformFrame } from "./api";
 import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
+import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
 import { measure } from "./measure";
-import { CHANNEL_COLORS, ScopePlot, type CursorHit, type CursorMode } from "./plot";
+import { channelColor, channelName, ScopePlot, type CursorHit, type CursorMode } from "./plot";
 import { SpectrumPlot } from "./spectrum";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -31,7 +32,20 @@ const state = {
   spectrum: null as Spectrum | null,
   /** Measurement log rows while logging, otherwise null. */
   log: null as string[] | null,
+  math: null as MathSettings | null,
+  historyPlaying: false,
 };
+
+/** The scope's frame plus the app-side math trace (channel 0) when math is on. */
+function displayFrame(): WaveformFrame | null {
+  const f = state.frame;
+  if (!f || !state.math) return f;
+  const m = computeMath(f, state.math);
+  return m ? { ...f, channels: [...f.channels, m] } : f;
+}
+
+/** Unit of a trace: V for channels, the operation's unit for math. */
+const unitOf = (wf: { unit?: string }) => wf.unit ?? "V";
 
 const plot = new ScopePlot($<HTMLCanvasElement>("plot"));
 const spectrumPlot = new SpectrumPlot($<HTMLCanvasElement>("spectrum"));
@@ -132,6 +146,7 @@ async function onConnected(model: string, firmware: string): Promise<void> {
   const status = await api.status();
   state.channelCount = status.channelCount ?? 2;
   buildChannelPanels();
+  updateTraceOptions();
   setConnected(true, `${model} · FW ${firmware}`);
   await refreshSettings();
 }
@@ -187,7 +202,7 @@ async function refreshSettings(): Promise<void> {
 // ---------- rendering ----------
 
 function render(): void {
-  plot.draw(state.frame, state.settings);
+  plot.draw(displayFrame(), state.settings);
   renderReadout();
   renderCursorInfo();
   renderMeasurements();
@@ -220,7 +235,7 @@ function renderReadout(): void {
   el.hidden = false;
   el.replaceChildren(
     line("t", r.time, "#c9d1d9"),
-    ...r.values.map((v) => line(`C${v.channel}`, v.text, CHANNEL_COLORS[v.channel - 1])),
+    ...r.values.map((v) => line(channelName(v.channel), v.text, channelColor(v.channel))),
   );
   function line(label: string, value: string, color: string) {
     const div = document.createElement("div");
@@ -229,14 +244,14 @@ function renderReadout(): void {
   }
 }
 
-const APP_COLUMNS: [string, (m: ReturnType<typeof measure>) => string][] = [
+const APP_COLUMNS: [string, (m: ReturnType<typeof measure>, unit: string) => string][] = [
   ["Freq", (m) => si(m.frequency, "Hz", 5)],
   ["Period", (m) => si(1 / m.frequency, "s", 4)],
-  ["Vpp", (m) => si(m.pkpk, "V")],
-  ["Max", (m) => si(m.max, "V")],
-  ["Min", (m) => si(m.min, "V")],
-  ["Mean", (m) => si(m.mean, "V")],
-  ["RMS", (m) => si(m.rms, "V")],
+  ["Pk-pk", (m, u) => si(m.pkpk, u)],
+  ["Max", (m, u) => si(m.max, u)],
+  ["Min", (m, u) => si(m.min, u)],
+  ["Mean", (m, u) => si(m.mean, u)],
+  ["RMS", (m, u) => si(m.rms, u)],
   ["Duty", (m) => (Number.isFinite(m.duty) ? `${(m.duty * 100).toFixed(1)} %` : "—")],
 ];
 
@@ -259,7 +274,7 @@ const SCOPE_COLUMNS: [string, string, (v: number) => string][] = [
 
 function renderMeasurements(): void {
   const el = $("measurements");
-  const f = state.frame;
+  const f = displayFrame();
   if (!f || f.channels.length === 0) {
     el.replaceChildren();
     return;
@@ -271,15 +286,17 @@ function renderMeasurements(): void {
   const body = table.createTBody();
   for (const wf of f.channels) {
     let cells: string[];
-    if (scope) {
+    if (scope && wf.channel !== MATH_CHANNEL) {
       const m = state.scopeMeasurements.get(wf.channel);
       cells = SCOPE_COLUMNS.map(([key, , fmt]) => (m?.[key] == null ? "—" : fmt(m[key]!)));
+    } else if (scope) {
+      cells = SCOPE_COLUMNS.map(() => "—");
     } else {
       const m = measure(wf);
-      cells = APP_COLUMNS.map(([, fn]) => fn(m));
+      cells = APP_COLUMNS.map(([, fn]) => fn(m, unitOf(wf)));
     }
     const row = body.insertRow();
-    row.innerHTML = `<th style="color:${CHANNEL_COLORS[wf.channel - 1]}">C${wf.channel}</th>${cells.map((c) => `<td>${c}</td>`).join("")}`;
+    row.innerHTML = `<th style="color:${channelColor(wf.channel)}">${channelName(wf.channel)}</th>${cells.map((c) => `<td>${c}</td>`).join("")}`;
   }
   el.replaceChildren(table);
 }
@@ -309,7 +326,7 @@ document.querySelectorAll<HTMLButtonElement>("#measure-source button").forEach((
 function renderCursorInfo(): void {
   const el = $("cursor-info");
   const { mode, t, v, ref } = plot.cursors;
-  const f = state.frame;
+  const f = displayFrame();
   if (mode === "off" || !f) {
     el.hidden = true;
     return;
@@ -324,14 +341,16 @@ function renderCursorInfo(): void {
     for (const wf of f.channels) {
       const a = plot.valueAt(wf.channel, t[0]);
       const b = plot.valueAt(wf.channel, t[1]);
-      const fmt = (x: number | undefined) => (x === undefined ? "—" : si(x, "V", 4));
-      const d = a === undefined || b === undefined ? "—" : si(b - a, "V", 4);
-      lines.push(row(`C${wf.channel}`, `${fmt(a)} → ${fmt(b)}  Δ ${d}`, CHANNEL_COLORS[wf.channel - 1]));
+      const u = unitOf(wf);
+      const fmt = (x: number | undefined) => (x === undefined ? "—" : si(x, u, 4));
+      const d = a === undefined || b === undefined ? "—" : si(b - a, u, 4);
+      lines.push(row(channelName(wf.channel), `${fmt(a)} → ${fmt(b)}  Δ ${d}`, channelColor(wf.channel)));
     }
   }
   if (mode === "volt" || mode === "both") {
-    const color = CHANNEL_COLORS[ref - 1];
-    lines.push(row("Y1", si(v[0], "V", 4), color), row("Y2", si(v[1], "V", 4), color), row("ΔV", si(v[1] - v[0], "V", 4), color));
+    const color = channelColor(ref);
+    const u = unitOf(f.channels.find((c) => c.channel === ref) ?? {});
+    lines.push(row("Y1", si(v[0], u, 4), color), row("Y2", si(v[1], u, 4), color), row("ΔY", si(v[1] - v[0], u, 4), color));
   }
   el.innerHTML = lines.join("");
   el.hidden = false;
@@ -347,7 +366,7 @@ $<HTMLSelectElement>("cursor-mode").addEventListener("change", (e) => {
 
 $<HTMLSelectElement>("cursor-ref").addEventListener("change", (e) => {
   plot.cursors.ref = Number((e.target as HTMLSelectElement).value);
-  const wf = state.frame?.channels.find((c) => c.channel === plot.cursors.ref);
+  const wf = displayFrame()?.channels.find((c) => c.channel === plot.cursors.ref);
   if (wf) plot.cursors.v = [2 * wf.voltsPerDiv - wf.offset, -2 * wf.voltsPerDiv - wf.offset];
   render();
 });
@@ -357,14 +376,14 @@ $<HTMLSelectElement>("cursor-ref").addEventListener("change", (e) => {
 function renderSpectrum(): void {
   if (!state.fftOn) return;
   const source = Number($<HTMLSelectElement>("fft-source").value);
-  const wf = state.frame?.channels.find((c) => c.channel === source);
+  const wf = displayFrame()?.channels.find((c) => c.channel === source);
   state.spectrum = wf ? spectrum(wf, $<HTMLSelectElement>("fft-window").value as WindowName) : null;
   spectrumPlot.draw(state.spectrum, Number($<HTMLSelectElement>("fft-span").value));
   const s = state.spectrum;
   $("fft-info").textContent = s
     ? `RBW ${si(s.df, "Hz")} · Nyquist ${si(s.df * s.dbv.length, "Hz")}` +
       (s.peak ? ` · Peak ${si(s.peak.frequency, "Hz", 5)} ${s.peak.dbv.toFixed(1)} dBV` : "")
-    : wf === undefined && state.frame ? `C${source} is off` : "";
+    : wf === undefined && state.frame ? `${channelName(source)} is off` : "";
   $("fft-readout").textContent = s ? spectrumPlot.readout(s) ?? "" : "";
 }
 
@@ -396,6 +415,200 @@ $("fft-btn").addEventListener("click", () => {
     spectrumPlot.resize();
     renderSpectrum();
   }
+});
+
+// ---------- trace lists (channels + math) ----------
+
+/** Fills the FFT source and voltage-cursor lists with the channels, plus M while math is on. */
+function updateTraceOptions(): void {
+  const traces = [...Array.from({ length: state.channelCount }, (_, i) => i + 1), ...(state.math ? [MATH_CHANNEL] : [])];
+  for (const [id, prefix] of [["fft-source", ""], ["cursor-ref", "Y on "]] as const) {
+    const sel = $<HTMLSelectElement>(id);
+    const keep = sel.value;
+    sel.replaceChildren(...traces.map((ch) => new Option(prefix + channelName(ch), String(ch))));
+    if (traces.map(String).includes(keep)) sel.value = keep;
+  }
+  if (!traces.includes(plot.cursors.ref)) plot.cursors.ref = 1;
+}
+
+// ---------- math ----------
+
+{
+  $<HTMLSelectElement>("math-op").replaceChildren(
+    ...Object.entries(MATH_OPS).map(([k, d]) => new Option(d.label, k)),
+  );
+  const scale = $<HTMLSelectElement>("math-scale");
+  scale.replaceChildren(new Option("Auto", ""), ...series125(1e-6, 1e9).map((v) => new Option(`${si(v, "")}/div`, String(v))));
+}
+
+function readMathSettings(): MathSettings {
+  const scale = $<HTMLSelectElement>("math-scale").value;
+  return {
+    op: $<HTMLSelectElement>("math-op").value as MathOp,
+    a: Number($<HTMLSelectElement>("math-a").value),
+    b: Number($<HTMLSelectElement>("math-b").value),
+    scale: scale ? Number(scale) : null,
+    offset: Number($<HTMLInputElement>("math-offset").value) || 0,
+  };
+}
+
+function updateMath(): void {
+  if (!state.math) return;
+  state.math = readMathSettings();
+  const def = MATH_OPS[state.math.op];
+  $("math-b-wrap").hidden = !def.binary;
+  $("math-unit").textContent = def.unit || "×";
+  render();
+}
+
+$("math-btn").addEventListener("click", () => {
+  const on = !state.math;
+  for (const id of ["math-a", "math-b"]) {
+    const sel = $<HTMLSelectElement>(id);
+    if (sel.options.length !== state.channelCount) {
+      sel.replaceChildren(...Array.from({ length: state.channelCount }, (_, i) => new Option(`C${i + 1}`, String(i + 1))));
+      sel.value = id === "math-b" && state.channelCount > 1 ? "2" : "1";
+    }
+  }
+  state.math = on ? readMathSettings() : null;
+  $("math-btn").classList.toggle("on", on);
+  $("math-panel").hidden = !on;
+  updateTraceOptions();
+  updateMath();
+  render();
+});
+for (const id of ["math-op", "math-a", "math-b", "math-scale", "math-offset"]) $(id).addEventListener("change", updateMath);
+
+// ---------- history ----------
+
+function renderHistory(h: HistoryState): void {
+  $("history-btn").classList.toggle("on", h.enabled);
+  $("history-panel").hidden = !h.enabled;
+  if (!h.enabled) {
+    state.historyPlaying = false;
+    $("hist-play").classList.remove("on");
+    return;
+  }
+  const slider = $<HTMLInputElement>("hist-slider");
+  slider.max = String(Math.max(1, h.frameCount));
+  if (document.activeElement !== slider) slider.value = String(h.frame);
+  $("hist-info").textContent = `Frame ${h.frame} / ${h.frameCount}${h.frameTime ? `  ·  ${h.frameTime}` : ""}`;
+}
+
+/** Selects a history frame and shows it immediately. */
+async function goToFrame(frame: number): Promise<void> {
+  const h = state.settings?.history;
+  if (!h?.enabled) return;
+  const target = Math.min(Math.max(1, frame), h.frameCount);
+  const next = await api.historyFrame(target);
+  state.settings = { ...state.settings!, history: next };
+  renderHistory(next);
+  state.frame = await api.frame(Number($<HTMLSelectElement>("points").value));
+  render();
+}
+
+$("history-btn").addEventListener("click", () => {
+  const on = !state.settings?.history.enabled;
+  if (on && state.settings?.acquisition.mode === "AVERAGE") {
+    return toast("History isn't available in Average mode. Switch acquisition to Normal, Peak detect or High-res first.", "info");
+  }
+  act(async () => {
+    const h = await api.history(on);
+    if (on && h.enabled) toast("History mode stops acquisition; switch it off to resume.", "info");
+    else if (on) toast("The scope did not switch history mode on.", "info");
+  });
+});
+const frameNow = () => state.settings?.history.frame ?? 1;
+$("hist-first").addEventListener("click", () => goToFrame(1).catch(handleError));
+$("hist-prev").addEventListener("click", () => goToFrame(frameNow() - 1).catch(handleError));
+$("hist-next").addEventListener("click", () => goToFrame(frameNow() + 1).catch(handleError));
+$("hist-last").addEventListener("click", () => goToFrame(state.settings?.history.frameCount ?? 1).catch(handleError));
+$<HTMLInputElement>("hist-slider").addEventListener("change", (e) =>
+  goToFrame(Number((e.target as HTMLInputElement).value)).catch(handleError),
+);
+$("hist-play").addEventListener("click", async () => {
+  state.historyPlaying = !state.historyPlaying;
+  $("hist-play").classList.toggle("on", state.historyPlaying);
+  if (!state.historyPlaying) return;
+  if (frameNow() >= (state.settings?.history.frameCount ?? 1)) await goToFrame(1).catch(handleError);
+  while (state.historyPlaying && state.settings?.history.enabled) {
+    const h = state.settings.history;
+    if (h.frame >= h.frameCount) break;
+    try {
+      await goToFrame(h.frame + 1);
+    } catch (e) {
+      handleError(e);
+      break;
+    }
+    await sleep(120);
+  }
+  state.historyPlaying = false;
+  $("hist-play").classList.remove("on");
+});
+$("hist-export").addEventListener("click", () => {
+  toast("Reading every history frame… the CSV download starts when all frames are read.", "info");
+  const a = document.createElement("a");
+  a.href = api.historyExportUrl(Number($<HTMLSelectElement>("points").value));
+  a.download = "";
+  a.click();
+});
+
+// ---------- save / load menu ----------
+
+const saveMenu = $<HTMLDetailsElement>("save-menu");
+saveMenu.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => (saveMenu.open = false)));
+document.addEventListener("click", (e) => {
+  if (saveMenu.open && !saveMenu.contains(e.target as Node)) saveMenu.open = false;
+});
+
+$("setup-save-btn").addEventListener("click", () => {
+  if (!state.connected) return toast("Not connected.", "info");
+  const a = document.createElement("a");
+  a.href = api.setupUrl;
+  a.download = "";
+  a.click();
+});
+$("setup-load-btn").addEventListener("click", () => {
+  if (!state.connected) return toast("Not connected.", "info");
+  $<HTMLInputElement>("setup-file").click();
+});
+$<HTMLInputElement>("setup-file").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (!confirm(`Load "${file.name}" into the scope? This replaces all of its current settings.`)) return;
+  await act(() => api.loadSetup(file));
+  toast("Setup loaded.", "info");
+});
+
+{
+  const slot = $<HTMLSelectElement>("mem-slot");
+  slot.replaceChildren(...Array.from({ length: 20 }, (_, i) => new Option(String(i + 1), String(i + 1))));
+}
+$("memory-btn").addEventListener("click", () => {
+  if (!state.connected) return toast("Not connected.", "info");
+  $<HTMLDialogElement>("mem-dialog").showModal();
+});
+$("mem-close").addEventListener("click", () => $<HTMLDialogElement>("mem-dialog").close());
+$("mem-recall").addEventListener("click", async () => {
+  const n = Number($<HTMLSelectElement>("mem-slot").value);
+  $<HTMLDialogElement>("mem-dialog").close();
+  await act(() => api.recallMemory(n));
+  toast(`Recalled setup ${n}.`, "info");
+});
+$("mem-store").addEventListener("click", async () => {
+  const n = Number($<HTMLSelectElement>("mem-slot").value);
+  if (!confirm(`Store the current setup in memory ${n}? Whatever is stored there now is overwritten.`)) return;
+  $<HTMLDialogElement>("mem-dialog").close();
+  await act(() => api.saveMemory(n));
+  toast(`Stored in memory ${n}.`, "info");
+});
+$("default-setup-btn").addEventListener("click", async () => {
+  if (!state.connected) return toast("Not connected.", "info");
+  if (!confirm("Reset the scope to its default setup? All current settings are lost unless saved first.")) return;
+  await act(() => api.recallMemory(0));
+  toast("Default setup recalled.", "info");
 });
 
 // ---------- recording ----------
@@ -457,18 +670,121 @@ function renderSettings(): void {
   if (!s) return;
   fillSelect($("tdiv"), TIME_DIVS, (v) => `${si(v, "s")}`, s.timePerDiv);
   setInput($("trdl"), s.triggerDelay);
-  $("sara").textContent = si(s.sampleRate, "Sa/s");
+  setSelect($("interp"), s.acquisition.sinXInterpolation ? "1" : "0");
 
   document.querySelectorAll<HTMLButtonElement>("#trig-mode button").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === s.trigger.mode);
   });
-  const src = $<HTMLSelectElement>("trig-source");
-  if (document.activeElement !== src) src.value = s.trigger.source;
-  if (s.trigger.slope) $<HTMLSelectElement>("trig-slope").value = s.trigger.slope;
-  if (s.trigger.coupling) $<HTMLSelectElement>("trig-coupling").value = s.trigger.coupling;
-  setInput($("trig-level"), s.trigger.level);
-
+  renderAcquisition(s);
+  renderTrigger(s.trigger);
   for (const ch of s.channels) renderChannel(ch);
+  renderHistory(s.history);
+}
+
+// ---------- acquisition ----------
+
+const AVERAGES = [4, 16, 32, 64, 128, 256, 512, 1024];
+const ACQ_MODES: [string, string][] = [
+  ["SAMPLING", "Normal"],
+  ["PEAK_DETECT", "Peak detect"],
+  ["HIGH_RES", "High-res"],
+  ...AVERAGES.map((n): [string, string] => [`AVERAGE,${n}`, `Average ×${n}`]),
+];
+$<HTMLSelectElement>("acq-mode").replaceChildren(...ACQ_MODES.map(([v, label]) => new Option(label, v)));
+
+function renderAcquisition(s: ScopeSettings): void {
+  const a = s.acquisition;
+  setSelect($("acq-mode"), a.mode === "AVERAGE" ? `AVERAGE,${a.averages}` : a.mode);
+  // With one channel on, the ADCs interleave and memory doubles (14K…14M); with more, 7K…7M.
+  const single = s.channels.filter((c) => c.enabled).length <= 1;
+  const depths = single ? ["14K", "140K", "1.4M", "14M"] : ["7K", "70K", "700K", "7M"];
+  if (!depths.includes(a.memoryDepth)) depths.push(a.memoryDepth);
+  const mem = $<HTMLSelectElement>("mem-depth");
+  if (mem.dataset.key !== depths.join()) {
+    mem.replaceChildren(...depths.map((d) => new Option(`${d.replace("K", " k").replace("M", " M")}pts`, d)));
+    mem.dataset.key = depths.join();
+  }
+  setSelect(mem, a.memoryDepth);
+}
+
+$<HTMLSelectElement>("acq-mode").addEventListener("change", (e) => {
+  const [mode, n] = (e.target as HTMLSelectElement).value.split(",");
+  act(() => api.acquisition(n ? { mode, averages: Number(n) } : { mode }));
+});
+$<HTMLSelectElement>("mem-depth").addEventListener("change", (e) =>
+  act(() => api.acquisition({ memoryDepth: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLSelectElement>("interp").addEventListener("change", (e) =>
+  act(() => api.acquisition({ sinXInterpolation: (e.target as HTMLSelectElement).value === "1" })),
+);
+
+// ---------- trigger ----------
+
+/** Condition choices per trigger family; values are the scope's TRSE hold types. */
+const CONDITIONS: Record<string, { label: string; options: [string, string][] }> = {
+  GLIT: { label: "Width", options: [["PS", "shorter than"], ["PL", "longer than"], ["P2", "between"], ["P1", "outside"]] },
+  RUNT: { label: "Width", options: [["PS", "shorter than"], ["PL", "longer than"], ["P2", "between"], ["P1", "outside"]] },
+  SLEW: { label: "Time", options: [["IS", "shorter than"], ["IL", "longer than"], ["I2", "between"], ["I1", "outside"]] },
+  INTV: { label: "Interval", options: [["IS", "shorter than"], ["IL", "longer than"], ["I2", "between"], ["I1", "outside"]] },
+};
+const isRange = (hold: string | null) => hold !== null && ["P2", "P1", "I2", "I1"].includes(hold);
+
+function renderTrigger(t: TriggerSettings): void {
+  setSelect($("trig-type"), t.type);
+  setSelect($("trig-source"), t.source);
+  if (t.slope) setSelect($("trig-slope"), t.slope);
+  if (t.coupling) setSelect($("trig-coupling"), t.coupling);
+  setInput($("trig-level"), t.level);
+  $("trig-level-label").textContent = t.type === "SLEW" || t.type === "RUNT" ? "High level" : "Level";
+  $("trig-level2-row").hidden = !(t.type === "SLEW" || t.type === "RUNT");
+  setInput($("trig-level2"), t.level2);
+  $("set50-btn").hidden = t.type !== "EDGE";
+
+  $("trig-holdoff-row").hidden = t.type !== "EDGE";
+  setInput($("trig-holdoff"), t.type === "EDGE" && t.holdType === "TI" ? t.holdValue : null);
+
+  const cond = CONDITIONS[t.type];
+  $("trig-cond-row").hidden = !cond;
+  $("trig-time-row").hidden = !cond && t.type !== "DROP";
+  $("trig-time-label").textContent = t.type === "DROP" ? "Timeout" : "Time";
+  if (cond) {
+    $("trig-cond-label").textContent = cond.label;
+    const sel = $<HTMLSelectElement>("trig-cond");
+    if (sel.dataset.key !== t.type) {
+      sel.replaceChildren(...cond.options.map(([v, label]) => new Option(label, v)));
+      sel.dataset.key = t.type;
+    }
+    if (t.holdType) setSelect(sel, t.holdType);
+  }
+  const range = isRange(t.holdType);
+  $("trig-time2").hidden = $("trig-time2-sep").hidden = !range;
+  setInput($("trig-time"), t.holdValue);
+  setInput($("trig-time2"), t.holdValue2);
+}
+
+$<HTMLSelectElement>("trig-type").addEventListener("change", (e) =>
+  act(() => api.trigger({ type: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLSelectElement>("trig-cond").addEventListener("change", (e) =>
+  act(() => api.trigger({ holdType: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLInputElement>("trig-holdoff").addEventListener("change", (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  act(() => api.trigger(v > 0 ? { holdType: "TI", holdValue: v } : { holdType: "OFF" }));
+});
+$<HTMLInputElement>("trig-time").addEventListener("change", (e) =>
+  act(() => api.trigger({ holdValue: Number((e.target as HTMLInputElement).value) })),
+);
+$<HTMLInputElement>("trig-time2").addEventListener("change", (e) =>
+  act(() => api.trigger({ holdValue2: Number((e.target as HTMLInputElement).value) })),
+);
+$<HTMLInputElement>("trig-level2").addEventListener("change", (e) =>
+  act(() => api.trigger({ level2: Number((e.target as HTMLInputElement).value) })),
+);
+$("set50-btn").addEventListener("click", () => act(() => api.set50()));
+
+function setSelect(select: HTMLSelectElement, value: string): void {
+  if (document.activeElement !== select) select.value = value;
 }
 
 // ---------- channel panels ----------
@@ -477,19 +793,16 @@ function buildChannelPanels(): void {
   const container = $("channels");
   container.replaceChildren();
   const src = $<HTMLSelectElement>("trig-source");
-  const fftSrc = $<HTMLSelectElement>("fft-source");
-  const cursorRef = $<HTMLSelectElement>("cursor-ref");
-  for (const s of [src, fftSrc, cursorRef]) s.replaceChildren();
+  src.replaceChildren();
   for (let n = 1; n <= state.channelCount; n++) {
     src.add(new Option(`C${n}`, `C${n}`));
-    fftSrc.add(new Option(`C${n}`, String(n)));
-    cursorRef.add(new Option(`Y on C${n}`, String(n)));
     const panel = document.createElement("section");
     panel.className = "panel channel";
     panel.id = `ch${n}`;
-    panel.style.setProperty("--ch", CHANNEL_COLORS[n - 1]);
+    panel.style.setProperty("--ch", channelColor(n));
     panel.innerHTML = `
-      <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label> Channel ${n}</h2>
+      <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label> Channel ${n}
+        <button class="bw-btn" data-f="bwl" title="20 MHz bandwidth limit">BW 20M</button></h2>
       <div class="row"><label>Volts/div</label>
         <div class="stepper">
           <button data-dir="-1" aria-label="More sensitive">‹</button>
@@ -497,13 +810,20 @@ function buildChannelPanels(): void {
           <button data-dir="1" aria-label="Less sensitive">›</button>
         </div></div>
       <div class="row"><label>Offset</label><div class="unit-input"><input type="number" step="any" data-f="offset" /><span>V</span></div></div>
-      <div class="row"><label>Coupling</label>
-        <select data-f="coupling"><option value="D1M">DC</option><option value="A1M">AC</option><option value="GND">GND</option></select></div>
-      <div class="row"><label>Probe</label><select data-f="probe"></select></div>`;
+      <div class="row"><label>Input</label>
+        <div class="pair">
+          <select data-f="coupling" title="Coupling"><option value="D1M">DC</option><option value="A1M">AC</option><option value="GND">GND</option></select>
+          <select data-f="probe" title="Probe attenuation"></select>
+        </div></div>`;
     container.append(panel);
 
     const field = <T extends HTMLElement>(f: string) => panel.querySelector<T>(`[data-f="${f}"]`)!;
     fillSelect(field("probe"), PROBES, (v) => `${v}×`);
+    field<HTMLButtonElement>("bwl").addEventListener("click", (e) => {
+      e.preventDefault();
+      const ch = state.settings?.channels.find((c) => c.channel === n);
+      if (ch) act(() => api.channel(n, { bandwidthLimit: !ch.bandwidthLimit }));
+    });
     field<HTMLInputElement>("enabled").addEventListener("change", (e) =>
       act(() => api.channel(n, { enabled: (e.target as HTMLInputElement).checked })),
     );
@@ -536,6 +856,7 @@ function renderChannel(ch: ChannelSettings): void {
   const field = <T extends HTMLElement>(f: string) => panel.querySelector<T>(`[data-f="${f}"]`)!;
   panel.classList.toggle("off", !ch.enabled);
   field<HTMLInputElement>("enabled").checked = ch.enabled;
+  field("bwl").classList.toggle("on", ch.bandwidthLimit);
   fillSelect(field("voltsPerDiv"), voltDivs(ch.probe), (v) => si(v, "V"), ch.voltsPerDiv);
   setInput(field("offset"), ch.offset);
   const cpl = field<HTMLSelectElement>("coupling");
@@ -650,11 +971,11 @@ function download(blob: Blob, name: string): void {
 }
 
 $("csv-btn").addEventListener("click", () => {
-  const f = state.frame;
+  const f = displayFrame();
   if (!f || f.channels.length === 0) return toast("No waveform to export.", "info");
   const len = Math.max(...f.channels.map((c) => c.volts.length));
   const base = f.channels[0];
-  const rows = [["time_s", ...f.channels.map((c) => `C${c.channel}_V`)].join(",")];
+  const rows = [["time_s", ...f.channels.map((c) => `${channelName(c.channel)}_${unitOf(c) || "ratio"}`)].join(",")];
   for (let i = 0; i < len; i++) {
     const t = base.firstPointTime + i * base.sampleInterval;
     rows.push([t.toExponential(6), ...f.channels.map((c) => c.volts[i]?.toPrecision(6) ?? "")].join(","));

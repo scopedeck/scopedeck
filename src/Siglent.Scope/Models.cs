@@ -22,15 +22,35 @@ public sealed record ChannelSettings(
     double VoltsPerDiv,
     double Offset,
     string Coupling,
-    double Probe);
+    double Probe,
+    bool BandwidthLimit);
 
+/// <param name="Type">EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout) or TV.</param>
+/// <param name="HoldType">Condition: OFF/TI (edge holdoff, dropout time), PS/PL/P2/P1 (pulse, runt), IS/IL/I2/I1 (slope, interval).</param>
+/// <param name="HoldValue">Holdoff or condition time in seconds; the lower limit for range conditions.</param>
+/// <param name="HoldValue2">Upper limit for range conditions (P2/P1/I2/I1).</param>
+/// <param name="Level2">Lower trigger level (slope and runt triggers).</param>
 public sealed record TriggerSettings(
     string Mode,
     string Type,
     string Source,
     string? Slope,
     double? Level,
-    string? Coupling);
+    string? Coupling,
+    string? HoldType,
+    double? HoldValue,
+    double? HoldValue2,
+    double? Level2);
+
+/// <param name="Mode">SAMPLING, PEAK_DETECT, AVERAGE or HIGH_RES.</param>
+/// <param name="MemoryDepth">As the scope reports it: 7K…7M with two channels, 14K…14M with one.</param>
+/// <param name="SinXInterpolation">sin(x)/x (true) or linear (false) interpolation.</param>
+public sealed record AcquisitionSettings(string Mode, int Averages, string MemoryDepth, bool SinXInterpolation);
+
+/// <param name="Frame">Current history frame (1-based).</param>
+/// <param name="FrameCount">Number of stored frames.</param>
+/// <param name="FrameTime">Acquisition time of the current frame, as the scope reports it ("00:26:45.388406").</param>
+public sealed record HistoryState(bool Enabled, int Frame, int FrameCount, string? FrameTime);
 
 /// <param name="TriggerDelay">Screen-center time relative to the trigger, as shown on the scope ("Delay").</param>
 public sealed record ScopeSettings(
@@ -38,8 +58,10 @@ public sealed record ScopeSettings(
     double TriggerDelay,
     double SampleRate,
     string Status,
+    AcquisitionSettings Acquisition,
     TriggerSettings Trigger,
-    IReadOnlyList<ChannelSettings> Channels);
+    IReadOnlyList<ChannelSettings> Channels,
+    HistoryState History);
 
 /// <summary>One channel of a captured frame. Sample i is at FirstPointTime + i * SampleInterval.</summary>
 public sealed record ChannelWaveform(
@@ -62,14 +84,27 @@ public sealed record ChannelUpdate(
     double? VoltsPerDiv = null,
     double? Offset = null,
     string? Coupling = null,
-    double? Probe = null);
+    double? Probe = null,
+    bool? BandwidthLimit = null);
 
 /// <param name="TriggerDelay">Screen-center time relative to the trigger, as shown on the scope ("Delay").</param>
 public sealed record TimebaseUpdate(double? TimePerDiv = null, double? TriggerDelay = null);
 
+public sealed record AcquisitionUpdate(
+    string? Mode = null,
+    int? Averages = null,
+    string? MemoryDepth = null,
+    bool? SinXInterpolation = null);
+
+/// <param name="HoldValue">Seconds; for an edge trigger, null or 0 together with HoldType OFF disables holdoff.</param>
 public sealed record TriggerUpdate(
     string? Mode = null,
     string? Source = null,
     string? Slope = null,
     double? Level = null,
-    string? Coupling = null);
+    string? Coupling = null,
+    string? Type = null,
+    string? HoldType = null,
+    double? HoldValue = null,
+    double? HoldValue2 = null,
+    double? Level2 = null);

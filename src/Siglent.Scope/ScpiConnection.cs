@@ -59,6 +59,19 @@ public sealed class ScpiConnection : IAsyncDisposable
         });
     }
 
+    /// <summary>Sends a command with a definite-length binary block: "PNSU #9000045836&lt;data&gt;\n".</summary>
+    public async Task WriteBlockAsync(string header, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        DiscardPending();
+        await WithTimeout(BinaryTimeout, ct, async token =>
+        {
+            await _stream.WriteAsync(Encoding.ASCII.GetBytes($"{header}#9{data.Length:D9}"), token);
+            await _stream.WriteAsync(data, token);
+            await _stream.WriteAsync("\n"u8.ToArray(), token);
+            return 0;
+        });
+    }
+
     /// <summary>Sends a query and returns the single-line response without the terminator.</summary>
     public async Task<string> QueryAsync(string query, CancellationToken ct = default)
     {

@@ -1,6 +1,6 @@
 import type { Spectrum } from "./fft";
 import { si } from "./format";
-import { CHANNEL_COLORS } from "./plot";
+import { channelColor } from "./plot";
 
 const X_DIVS = 10;
 const Y_DIVS = 10;
@@ -84,7 +84,7 @@ export class SpectrumPlot {
     ctx.beginPath();
     ctx.rect(a.x, a.y, a.w, a.h);
     ctx.clip();
-    const color = CHANNEL_COLORS[s.channel - 1];
+    const color = channelColor(s.channel);
     ctx.strokeStyle = color;
     ctx.fillStyle = color + "22";
     const bins = Math.min(s.dbv.length, Math.ceil(this.fMax / s.df) + 1);

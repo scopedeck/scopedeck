@@ -16,8 +16,14 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 ## Features
 
 - Live waveform view (≈5–20 fps over LAN depending on memory depth) with ground, trigger-position and trigger-level markers
-- Controls: Auto / Normal / Single / Stop, auto setup, time/div, delay, trigger source/slope/coupling/level,
-  per-channel on/off, V/div, offset, coupling, probe factor
+- Controls: Auto / Normal / Single / Stop, auto setup, acquisition mode (normal, peak detect, high-res, average ×4…×1024),
+  memory depth, interpolation, time/div, delay, per-channel on/off, V/div, offset, coupling, probe factor, 20 MHz bandwidth limit
+- **Triggers**: edge (with holdoff and a 50 % button), pulse width, slope, interval, runt and dropout, with
+  shorter/longer/between/outside conditions and the low level for slope and runt triggers
+- **Math**: A+B, A−B, A×B, A÷B, d/dt, ∫dt and √ as an extra trace, computed in the app (the scope's own math display
+  cannot be switched off again remotely); works with cursors, measurements, FFT and CSV export
+- **History**: browse the scope's stored acquisitions frame by frame with timestamps, play them back, export all as CSV
+- **Setups**: save the scope setup to a file and load it back, store/recall the scope's 20 setup memories, default setup
 - **Cursors**: draggable time (X1/X2) and voltage (Y1/Y2) cursors with ΔT, 1/ΔT, ΔV and each channel's value at X1/X2
 - **FFT**: spectrum of any channel in dBV (RMS), Hann / Hamming / Blackman-Harris / flat-top / rectangular window,
   span zoom, peak marker, hover readout. Resolution follows the *Points* setting (20k points → finer RBW, higher Nyquist)
@@ -88,6 +94,18 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 - `Cn:PAVA? ALL` returns every measurement in one response (~0.5 s); `PAVA? ALL` without a channel never answers.
   Single-parameter queries take ~0.3 s each.
 - Transfers are limited by the scope: ~50–150 ms per `WF?` with 7 Mpts memory, ~4 s for the full 7 Mpts.
+- **`AVGA?` switches the scope into average mode** (so does `AVGA`). The app never sends it: the count comes from
+  `ACQW?` ("AVERAGE,16") and is set with `ACQW AVERAGE,n`.
+- History mode (`HSMD ON`) is refused in average mode. `FRAM?` reports the number of frames only right after it is
+  switched on; the app otherwise finds it with `FRAM 1000000` (clamped to the last frame). `FTIM?` answers only in
+  history mode. Frame count depends on memory depth (≈36 frames at 70K, 1–2 at 7M).
+- Peak detect forces 7M memory; high-res allows at most 700K; 7M is refused in average mode.
+- `TRSE <type>,SR,<src>` with only the source keeps the existing condition; changing the type needs a full
+  `HT`/`HV`/`HV2` set valid for that type.
+- `PNSU?` returns the setup as XML (~45 KB) on this 2-channel model (the guide says binary). Loading it back works, but
+  two `unit_type` fields of display values came back different.
+- The math display can be switched on (`MATH:TRA ON`) but not off again (`MATH:TRA OFF` is ignored, `MATH:TRA?` gets no
+  answer), which is why ScopeDeck computes math itself.
 - `SCDP` returns an 800×480 RGB565 BMP (top-down, BI_BITFIELDS) followed by one extra `\n` byte.
 
 ## Related projects

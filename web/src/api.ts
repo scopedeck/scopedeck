@@ -21,8 +21,13 @@ export interface ChannelSettings {
   offset: number;
   coupling: string;
   probe: number;
+  bandwidthLimit: boolean;
 }
 
+/**
+ * type: EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout) or TV.
+ * holdType: OFF/TI (edge holdoff, dropout), PS/PL/P2/P1 (pulse, runt), IS/IL/I2/I1 (slope, interval).
+ */
 export interface TriggerSettings {
   mode: string;
   type: string;
@@ -30,6 +35,25 @@ export interface TriggerSettings {
   slope: string | null;
   level: number | null;
   coupling: string | null;
+  holdType: string | null;
+  holdValue: number | null;
+  holdValue2: number | null;
+  level2: number | null;
+}
+
+export interface AcquisitionSettings {
+  /** SAMPLING, PEAK_DETECT, AVERAGE or HIGH_RES */
+  mode: string;
+  averages: number;
+  memoryDepth: string;
+  sinXInterpolation: boolean;
+}
+
+export interface HistoryState {
+  enabled: boolean;
+  frame: number;
+  frameCount: number;
+  frameTime: string | null;
 }
 
 export interface ScopeSettings {
@@ -37,10 +61,13 @@ export interface ScopeSettings {
   triggerDelay: number;
   sampleRate: number;
   status: string;
+  acquisition: AcquisitionSettings;
   trigger: TriggerSettings;
   channels: ChannelSettings[];
+  history: HistoryState;
 }
 
+/** Channel 0 is the app-side math trace, which also carries its unit. */
 export interface ChannelWaveform {
   channel: number;
   voltsPerDiv: number;
@@ -48,7 +75,8 @@ export interface ChannelWaveform {
   firstPointTime: number;
   sampleInterval: number;
   memoryPoints: number;
-  volts: number[];
+  volts: number[] | Float32Array;
+  unit?: string;
 }
 
 export interface WaveformFrame {
@@ -59,7 +87,13 @@ export interface WaveformFrame {
 }
 
 export type ChannelUpdate = Partial<Omit<ChannelSettings, "channel">>;
-export type TriggerUpdate = Partial<Pick<TriggerSettings, "mode" | "source" | "slope" | "coupling">> & { level?: number };
+export type TriggerUpdate = Partial<Omit<TriggerSettings, "level" | "holdValue" | "holdValue2" | "level2">> & {
+  level?: number;
+  holdValue?: number;
+  holdValue2?: number;
+  level2?: number;
+};
+export type AcquisitionUpdate = Partial<AcquisitionSettings>;
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -68,10 +102,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const raw = body instanceof Blob;
   const res = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined ? undefined : { "Content-Type": raw ? "application/octet-stream" : "application/json" },
+    body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -101,7 +136,16 @@ export const api = {
   captureUrl: "/api/capture",
   channel: (n: number, update: ChannelUpdate) => request<void>("POST", `/api/channel/${n}`, update),
   timebase: (update: { timePerDiv?: number; triggerDelay?: number }) => request<void>("POST", "/api/timebase", update),
+  acquisition: (update: AcquisitionUpdate) => request<void>("POST", "/api/acquisition", update),
   trigger: (update: TriggerUpdate) => request<void>("POST", "/api/trigger", update),
+  set50: () => request<void>("POST", "/api/trigger/set50"),
   autoSetup: () => request<void>("POST", "/api/autosetup"),
+  history: (enabled: boolean) => request<HistoryState>("POST", "/api/history", { enabled }),
+  historyFrame: (frame: number) => request<HistoryState>("POST", "/api/history/frame", { frame }),
+  historyExportUrl: (maxPoints: number) => `/api/history/export?maxPoints=${maxPoints}`,
+  setupUrl: "/api/setup",
+  loadSetup: (file: Blob) => request<void>("POST", "/api/setup", file),
+  saveMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/save`),
+  recallMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/recall`),
   scpi: (command: string) => request<{ response: string | null }>("POST", "/api/scpi", { command }),
 };

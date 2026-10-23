@@ -38,14 +38,27 @@
               <option value="both">Both</option>
             </select>
           </label>
-          <select id="cursor-ref" title="Channel the voltage cursors measure" hidden></select>
-          <button id="fft-btn" class="toggle" title="Show the spectrum of a channel">FFT</button>
+          <select id="cursor-ref" title="Trace the voltage cursors measure" hidden></select>
           <span class="sep"></span>
-          <button id="screenshot-btn" title="Capture the scope's screen">Screenshot</button>
-          <button id="csv-btn" title="Download the displayed waveform as CSV">Export CSV</button>
-          <button id="capture-btn" title="Download the scope's full acquisition memory (all samples) as CSV. A running scope is paused during the transfer.">Capture memory</button>
+          <button id="fft-btn" class="toggle" title="Show the spectrum of a trace">FFT</button>
+          <button id="math-btn" class="toggle" title="Add a math trace computed from the channels">Math</button>
+          <button id="history-btn" class="toggle" title="Browse the scope's stored acquisitions (stops acquisition while on)">History</button>
           <button id="log-btn" class="toggle" title="Record measurements of every frame; click again to stop and download CSV">Log</button>
-          <button id="png-btn" title="Save this plot as PNG">Save plot</button>
+          <details class="menu" id="save-menu">
+            <summary>Save / Load</summary>
+            <div class="menu-items">
+              <button id="screenshot-btn">Scope screenshot…</button>
+              <button id="csv-btn">Displayed waveform (CSV)</button>
+              <button id="capture-btn" title="All samples of the acquisition memory. A running scope is paused during the transfer.">Full memory (CSV)</button>
+              <button id="png-btn">Plot image (PNG)</button>
+              <hr />
+              <button id="setup-save-btn">Save scope setup to file</button>
+              <button id="setup-load-btn">Load scope setup from file…</button>
+              <button id="memory-btn">Scope setup memories…</button>
+              <button id="default-setup-btn">Default setup…</button>
+            </div>
+          </details>
+          <input type="file" id="setup-file" accept=".xml,.bin" hidden />
           <span class="spacer"></span>
           <label class="inline">Points
             <select id="points">
@@ -57,6 +70,27 @@
           </label>
           <span id="fps" class="muted"></span>
         </div>
+        <section id="math-panel" class="strip" hidden>
+          <b class="strip-title math-title">M</b>
+          <select id="math-op" title="Operation"></select>
+          <label class="inline">A <select id="math-a"></select></label>
+          <label class="inline" id="math-b-wrap">B <select id="math-b"></select></label>
+          <label class="inline">Scale <select id="math-scale"></select></label>
+          <label class="inline" title="Value at the center line">Center <span class="unit-input"><input id="math-offset" type="number" step="any" value="0" /><span id="math-unit">V</span></span></label>
+          <span class="muted strip-note">Computed from the transferred samples</span>
+        </section>
+        <section id="history-panel" class="strip" hidden>
+          <b class="strip-title">History</b>
+          <button id="hist-first" title="First frame">⏮</button>
+          <button id="hist-prev" title="Previous frame">◀</button>
+          <button id="hist-play" class="toggle" title="Play through the frames">Play</button>
+          <button id="hist-next" title="Next frame">▶</button>
+          <button id="hist-last" title="Last frame">⏭</button>
+          <input id="hist-slider" type="range" min="1" max="1" value="1" />
+          <span id="hist-info" class="mono"></span>
+          <span class="spacer"></span>
+          <button id="hist-export" title="All frames at the current Points setting">Export all (CSV)</button>
+        </section>
         <section id="spectrum-panel" class="spectrum-panel" hidden>
           <div class="spectrum-head">
             <label class="inline">Source <select id="fft-source"></select></label>
@@ -105,6 +139,10 @@
             <button data-mode="SINGLE">Single</button>
             <button data-mode="STOP" class="danger">Stop</button>
           </div>
+          <div class="pair">
+            <select id="acq-mode" title="Acquisition mode"></select>
+            <select id="mem-depth" title="Memory depth"></select>
+          </div>
           <button id="autosetup-btn" class="wide">Auto setup</button>
         </section>
 
@@ -122,47 +160,86 @@
             <label for="trdl">Delay</label>
             <div class="unit-input"><input id="trdl" type="number" step="any" /><span>s</span></div>
           </div>
-          <div class="row"><label>Sample rate</label><span id="sara" class="value">—</span></div>
+          <div class="row">
+            <label for="interp">Interpolation</label>
+            <select id="interp"><option value="1">sin(x)/x</option><option value="0">Linear</option></select>
+          </div>
         </section>
 
         <section class="panel">
           <h2>Trigger</h2>
           <div class="row">
-            <label for="trig-source">Source</label>
-            <select id="trig-source"></select>
+            <label for="trig-type">Type</label>
+            <div class="pair">
+              <select id="trig-type" title="Trigger type">
+                <option value="EDGE">Edge</option>
+                <option value="GLIT">Pulse</option>
+                <option value="SLEW">Slope</option>
+                <option value="INTV">Interval</option>
+                <option value="RUNT">Runt</option>
+                <option value="DROP">Dropout</option>
+                <option value="TV" disabled>Video</option>
+              </select>
+              <select id="trig-source" title="Source"></select>
+            </div>
           </div>
           <div class="row">
-            <label for="trig-slope">Slope</label>
-            <select id="trig-slope">
-              <option value="POS">Rising</option>
-              <option value="NEG">Falling</option>
-              <option value="WINDOW">Either</option>
-            </select>
+            <label for="trig-slope">Edge</label>
+            <div class="pair">
+              <select id="trig-slope" title="Slope / polarity">
+                <option value="POS">Rising</option>
+                <option value="NEG">Falling</option>
+                <option value="WINDOW">Either</option>
+              </select>
+              <select id="trig-coupling" title="Trigger coupling">
+                <option value="DC">DC</option>
+                <option value="AC">AC</option>
+                <option value="LFREJ">LF reject</option>
+                <option value="HFREJ">HF reject</option>
+              </select>
+            </div>
           </div>
           <div class="row">
-            <label for="trig-coupling">Coupling</label>
-            <select id="trig-coupling">
-              <option value="DC">DC</option>
-              <option value="AC">AC</option>
-              <option value="LFREJ">LF reject</option>
-              <option value="HFREJ">HF reject</option>
-            </select>
+            <label for="trig-level" id="trig-level-label">Level</label>
+            <div class="unit-input"><input id="trig-level" type="number" step="any" /><span>V</span><button id="set50-btn" class="mini" title="Set the level to the middle of the signal">50%</button></div>
           </div>
-          <div class="row">
-            <label for="trig-level">Level</label>
-            <div class="unit-input"><input id="trig-level" type="number" step="any" /><span>V</span></div>
+          <div class="row" id="trig-level2-row" hidden>
+            <label for="trig-level2">Low level</label>
+            <div class="unit-input"><input id="trig-level2" type="number" step="any" /><span>V</span></div>
+          </div>
+          <div class="row" id="trig-holdoff-row">
+            <label for="trig-holdoff" title="Empty or 0 = off">Holdoff</label>
+            <div class="unit-input"><input id="trig-holdoff" type="number" step="any" min="0" placeholder="off" /><span>s</span></div>
+          </div>
+          <div class="row" id="trig-cond-row" hidden>
+            <label for="trig-cond" id="trig-cond-label">Width</label>
+            <select id="trig-cond"></select>
+          </div>
+          <div class="row" id="trig-time-row" hidden>
+            <label for="trig-time" id="trig-time-label">Time</label>
+            <div class="unit-input"><input id="trig-time" type="number" step="any" min="0" /><span id="trig-time2-sep" hidden>…</span><input id="trig-time2" type="number" step="any" min="0" hidden /><span>s</span></div>
           </div>
         </section>
 
         <div id="channels"></div>
-      </aside>
-    </main>
+      </aside>    </main>
 
     <dialog id="shot-dialog" class="shot-dialog">
       <img id="shot-img" alt="Oscilloscope screen" />
       <div class="dialog-actions">
         <button id="shot-save">Save PNG</button>
         <button id="shot-close">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="mem-dialog" class="small-dialog">
+      <h3>Scope setup memories</h3>
+      <p class="muted">The scope keeps 20 setups in its own memory. Storing overwrites the selected memory.</p>
+      <label class="inline">Memory <select id="mem-slot"></select></label>
+      <div class="dialog-actions">
+        <button id="mem-recall">Recall</button>
+        <button id="mem-store" class="danger-outline">Store current setup</button>
+        <button id="mem-close">Close</button>
       </div>
     </dialog>
 
