@@ -4,11 +4,11 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace Siglent.Desktop;
 
-/// <summary>A window that shows the SDS Remote UI in WebView2 (the Edge engine built into Windows).</summary>
+/// <summary>A window that shows the ScopeDeck UI in WebView2 (the Edge engine built into Windows).</summary>
 internal sealed class MainForm : Form
 {
     private static readonly string DataFolder =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SDS Remote");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScopeDeck");
 
     private readonly WebView2 _web;
     private readonly Uri _url;
@@ -16,7 +16,7 @@ internal sealed class MainForm : Form
     public MainForm(Uri url)
     {
         _url = url;
-        Text = "SDS Remote";
+        Text = "ScopeDeck";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         BackColor = Color.FromArgb(13, 16, 20);
         StartPosition = FormStartPosition.CenterScreen;
@@ -32,7 +32,7 @@ internal sealed class MainForm : Form
     {
         try
         {
-            // Keep browser data (e.g. the last scope address) in %LocalAppData%, not next to the exe.
+            // Keep browser data in %LocalAppData%, not next to the exe.
             var env = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(DataFolder, "WebView2"));
             await _web.EnsureCoreWebView2Async(env);
         }
@@ -40,7 +40,7 @@ internal sealed class MainForm : Form
         {
             MessageBox.Show(this,
                 "The Microsoft Edge WebView2 Runtime is required. It is part of Windows 11; on Windows 10 install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703",
-                "SDS Remote", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "ScopeDeck", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
             return;
         }

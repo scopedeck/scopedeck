@@ -1,7 +1,7 @@
 # Roadmap
 
 Scope features that the SDS1000X-E remote command set supports (programming guide PG01-E02C) and that
-SDS Remote does not use yet. Options that a 2-channel SDS1202X-E does not have (digital/MSO channels) are left out.
+ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (digital/MSO channels) are left out.
 
 ## Next release (RC 2)
 

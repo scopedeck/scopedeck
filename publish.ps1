@@ -1,4 +1,4 @@
-# Builds "SDS Remote.exe" (a single file) into .\dist.
+# Builds "ScopeDeck.exe" (a single file) into .\dist.
 # -SelfContained bundles the .NET runtime (~100 MB) so the exe also runs on PCs without .NET 10 installed.
 param([switch]$SelfContained)
 

@@ -10,6 +10,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+    <AssemblyName>scopedeck-server</AssemblyName>
+    <RootNamespace>Siglent.Server</RootNamespace>
     <WebDir>$(MSBuildThisFileDirectory)..\..\web\</WebDir>
   </PropertyGroup>
 

@@ -1,6 +1,6 @@
 name: Website
 
-# Publishes docs/ to GitHub Pages: https://sds-remote.github.io/sds-remote/
+# Publishes docs/ to GitHub Pages: https://scopedeck.github.io/scopedeck/
 on:
   push:
     branches: [main]

@@ -21,7 +21,7 @@ internal static class Program
         }
         catch (Exception e)
         {
-            MessageBox.Show($"Could not start: {e.Message}", "SDS Remote", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Could not start: {e.Message}", "ScopeDeck", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 

@@ -20,6 +20,7 @@ public static class SiglentServer
             ContentRootPath = AppContext.BaseDirectory,
         });
         builder.Services.AddSingleton<ScopeService>();
+        builder.Services.AddSingleton<UserSettings>();
         builder.Services.AddProblemDetails();
         configure?.Invoke(builder);
 
@@ -34,14 +35,14 @@ public static class SiglentServer
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = ui });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = ui });
 
-        MapApi(app, defaultHost);
+        MapApi(app, defaultHost, simulated: simulator is not null);
 
         if (simulator is not null)
             app.Lifetime.ApplicationStopping.Register(() => simulator.DisposeAsync().AsTask().Wait());
         return app;
     }
 
-    private static void MapApi(WebApplication app, string defaultHost)
+    private static void MapApi(WebApplication app, string defaultHost, bool simulated)
     {
         var api = app.MapGroup("/api").AddEndpointFilter(async (context, next) =>
         {
@@ -66,18 +67,23 @@ public static class SiglentServer
         string version = typeof(SiglentServer).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
 
-        api.MapGet("/status", (ScopeService scope) => new
+        api.MapGet("/status", (ScopeService scope, UserSettings settings) => new
         {
             Version = version,
             Connected = scope.Identity is not null,
-            Host = scope.Host ?? defaultHost,
+            // The simulator always uses its own address; otherwise prefer the last address that worked.
+            Host = scope.Host ?? (simulated ? defaultHost : settings.LastHost ?? defaultHost),
             scope.Port,
             scope.Identity,
             ChannelCount = scope.Identity?.ChannelCount,
         });
 
-        api.MapPost("/connect", async (ConnectRequest request, ScopeService scope, CancellationToken ct) =>
-            await scope.ConnectAsync(request.Host.Trim(), request.Port ?? ScpiConnection.DefaultPort, ct));
+        api.MapPost("/connect", async (ConnectRequest request, ScopeService scope, UserSettings settings, CancellationToken ct) =>
+        {
+            var identity = await scope.ConnectAsync(request.Host.Trim(), request.Port ?? ScpiConnection.DefaultPort, ct);
+            if (!simulated) settings.LastHost = request.Host.Trim();
+            return identity;
+        });
 
         api.MapPost("/disconnect", async (ScopeService scope) =>
         {

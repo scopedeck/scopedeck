@@ -1,17 +1,17 @@
-# SDS Remote
+# ScopeDeck
 
-[![CI](https://github.com/sds-remote/sds-remote/actions/workflows/ci.yml/badge.svg)](https://github.com/sds-remote/sds-remote/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/sds-remote/sds-remote?include_prereleases)](https://github.com/sds-remote/sds-remote/releases)
+[![CI](https://github.com/scopedeck/scopedeck/actions/workflows/ci.yml/badge.svg)](https://github.com/scopedeck/scopedeck/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/scopedeck/scopedeck?include_prereleases)](https://github.com/scopedeck/scopedeck/releases)
 
 A modern replacement for EasyScopeX for Siglent SDS1000X-E oscilloscopes (developed against an
 SDS1202X-E, firmware 1.3.27). A .NET 10 backend talks to the scope; a TypeScript UI shows it — in its own
-Windows window (`SDS Remote.exe`) or in any browser.
+Windows window (`ScopeDeck.exe`) or in any browser.
 
 No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a TCP socket on port 5025.
 
-**[Download](https://github.com/sds-remote/sds-remote/releases)** · **[Website](https://sds-remote.github.io/sds-remote/)** · **[Roadmap](ROADMAP.md)**
+**[Download](https://github.com/scopedeck/scopedeck/releases)** · **[Website](https://scopedeck.github.io/scopedeck/)** · **[Roadmap](ROADMAP.md)**
 
-![SDS Remote with cursors and measurements](docs/images/live-cursors.png)
+![ScopeDeck with cursors and measurements](docs/images/live-cursors.png)
 
 ## Features
 
@@ -30,12 +30,15 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 
 ## Running
 
-**Prebuilt:** download from [Releases](https://github.com/sds-remote/sds-remote/releases) — the Windows desktop app
+**Prebuilt:** download from [Releases](https://github.com/scopedeck/scopedeck/releases) — the Windows desktop app
 (`…-windows-x64-standalone.zip` needs nothing else installed) or the server + browser UI for Linux/macOS/Windows.
 
-**Windows desktop app from source:** run `.\publish.ps1`, then start `dist\SDS Remote.exe`. It needs the .NET 10 runtime
-(use `.\publish.ps1 -SelfContained` for a ~100 MB exe that does not). Edit `dist\appsettings.json` to change the
-default scope address. Browser data (last address) is kept in `%LocalAppData%\SDS Remote`.
+**Windows desktop app from source:** run `.\publish.ps1`, then start `dist\ScopeDeck.exe`. It needs the .NET 10 runtime
+(use `.\publish.ps1 -SelfContained` for a ~100 MB exe that does not).
+
+The last scope address you connected to is remembered in `%LocalAppData%\ScopeDeck\settings.json`
+(`~/.local/share/ScopeDeck` on Linux, `~/Library/Application Support/ScopeDeck` on macOS). A fixed default can be set
+in `appsettings.json` next to the executable (`Scope:Host`).
 
 **Browser (any OS):**
 
@@ -51,7 +54,7 @@ UI development with hot reload: run the server, then `cd web; npm run dev` and o
 
 ```bash
 dotnet publish src/Siglent.Server -c Release -r linux-x64 -p:PublishSingleFile=true -o out   # or osx-arm64, osx-x64, linux-arm64
-./out/Siglent.Server      # then open http://localhost:5180
+./out/scopedeck-server     # then open http://localhost:5180
 ```
 
 The server listens on localhost only. To use the app from another device, start it with
@@ -73,7 +76,7 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 ## Protocol notes (verified on the real SDS1202X-E, FW 1.3.27)
 
 - **One client at a time.** The scope accepts a second TCP connection but never answers it. Close EasyScopeX
-  (or another SDS Remote) before connecting.
+  (or another ScopeDeck) before connecting.
 - `CHDR OFF` is sent on connect so responses are bare values (`2.00E+00` instead of `C1:VDIV 2.00E+00V`).
   This setting persists on the scope until changed or power-cycled.
 - `Cn:WF? DAT2` returns `DAT2,#9<9-digit length><bytes>\n\n`. Each byte is a **signed** 8-bit code:
@@ -86,6 +89,13 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   Single-parameter queries take ~0.3 s each.
 - Transfers are limited by the scope: ~50–150 ms per `WF?` with 7 Mpts memory, ~4 s for the full 7 Mpts.
 - `SCDP` returns an 800×480 RGB565 BMP (top-down, BI_BITFIELDS) followed by one extra `\n` byte.
+
+## Related projects
+
+- [klumw/sdsremote](https://github.com/klumw/sdsremote) — a Flutter app for the same scopes (VXI-11/USB) with a
+  virtual front panel, macro recorder, data logger with PDF reports and an AI chat assistant.
+
+ScopeDeck was published for one day as "SDS Remote" and renamed to avoid confusion with the project above.
 
 ## License
 

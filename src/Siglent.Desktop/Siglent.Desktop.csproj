@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Siglent.Server\Siglent.Server.csproj" />
@@ -15,7 +15,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>SDS Remote</AssemblyName>
+    <AssemblyName>ScopeDeck</AssemblyName>
     <RootNamespace>Siglent.Desktop</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -40,7 +40,7 @@
 
   <!-- Only the exe and the editable appsettings.json belong in the publish folder. -->
   <Target Name="TrimPublishFolder" AfterTargets="Publish">
-    <Delete Files="$(PublishDir)Siglent.Server.deps.json;$(PublishDir)Siglent.Server.runtimeconfig.json;$(PublishDir)appsettings.Development.json" />
+    <Delete Files="$(PublishDir)scopedeck-server.deps.json;$(PublishDir)scopedeck-server.runtimeconfig.json;$(PublishDir)appsettings.Development.json" />
   </Target>
 
 </Project>

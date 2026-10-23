@@ -13,7 +13,6 @@ const VOLT_DIVS = series125(500e-6, 10);
 const PROBES = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
 const SETTINGS_REFRESH_MS = 1500;
 const SCOPE_MEASURE_REFRESH_MS = 2000;
-const HOST_KEY = "sds-remote.host";
 
 type MeasureSource = "app" | "scope";
 
@@ -118,12 +117,8 @@ $("connect-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Connecting…";
   try {
+    // The server remembers the address for next time.
     const id = await api.connect(host);
-    try {
-      localStorage.setItem(HOST_KEY, host);
-    } catch {
-      /* storage unavailable */
-    }
     await onConnected(id.model, id.firmware);
   } catch (err) {
     setConnected(false);
@@ -736,13 +731,7 @@ $("console-form").addEventListener("submit", async (e) => {
   try {
     const status = await api.status();
     $("version").textContent = status.version ? `v${status.version}` : "";
-    let saved: string | null = null;
-    try {
-      saved = localStorage.getItem(HOST_KEY);
-    } catch {
-      /* storage unavailable */
-    }
-    $<HTMLInputElement>("host").value = status.connected ? status.host : saved ?? status.host;
+    $<HTMLInputElement>("host").value = status.host;
     if (status.connected && status.identity) await onConnected(status.identity.model, status.identity.firmware);
   } catch (e) {
     handleError(e);

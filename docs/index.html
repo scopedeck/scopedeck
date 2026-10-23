@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SDS Remote — remote control for Siglent SDS1000X-E oscilloscopes</title>
+  <title>ScopeDeck — remote control for Siglent SDS1000X-E oscilloscopes</title>
   <meta name="description" content="Open-source, modern replacement for EasyScopeX: live waveforms, cursors, FFT, measurements and full-memory capture for Siglent SDS1000X-E oscilloscopes over LAN. No VISA drivers needed." />
-  <meta property="og:title" content="SDS Remote" />
+  <meta property="og:title" content="ScopeDeck" />
   <meta property="og:description" content="Modern remote control for Siglent SDS1000X-E oscilloscopes over LAN." />
-  <meta property="og:image" content="https://sds-remote.github.io/sds-remote/images/live-cursors.png" />
+  <meta property="og:image" content="https://scopedeck.github.io/scopedeck/images/live-cursors.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111418'/><path d='M3 20 Q8 4 13 16 T23 14 T29 10' stroke='%23f5d742' stroke-width='3' fill='none'/></svg>" />
   <style>
     :root {
@@ -91,11 +91,11 @@
 <body>
   <header class="wrap">
     <div class="logo" aria-hidden="true"></div>
-    <h1><span>SDS Remote</span></h1>
+    <h1><span>ScopeDeck</span></h1>
     <p class="tagline">A modern, open-source replacement for EasyScopeX. Control your Siglent SDS1000X-E oscilloscope over the network — no VISA drivers, no LabVIEW.</p>
     <div class="buttons">
-      <a class="btn primary" href="https://github.com/sds-remote/sds-remote/releases">Download</a>
-      <a class="btn" href="https://github.com/sds-remote/sds-remote">Source on GitHub</a>
+      <a class="btn primary" href="https://github.com/scopedeck/scopedeck/releases">Download</a>
+      <a class="btn" href="https://github.com/scopedeck/scopedeck">Source on GitHub</a>
     </div>
     <p class="small">Windows desktop app · server + browser UI for Linux and macOS · MIT license</p>
   </header>
@@ -103,7 +103,7 @@
   <div class="wrap">
     <figure>
       <img class="shot" src="images/live-cursors.png" width="2880" height="1720"
-           alt="SDS Remote showing a 1 kHz square wave with time and voltage cursors and the scope's measurements" />
+           alt="ScopeDeck showing a 1 kHz square wave with time and voltage cursors and the scope's measurements" />
       <figcaption>Live view of an SDS1202X-E with cursors and the scope's own measurements.</figcaption>
     </figure>
 
@@ -131,7 +131,7 @@
         </figure>
         <figure>
           <img class="shot" src="images/scope-screen.png" width="2880" height="1720" loading="lazy"
-               alt="The oscilloscope's own screen captured through SDS Remote" />
+               alt="The oscilloscope's own screen captured through ScopeDeck" />
           <figcaption>The scope's screen, captured with one click.</figcaption>
         </figure>
       </div>
@@ -144,16 +144,16 @@
         <div class="card">
           <h3>Windows</h3>
           <ol class="steps">
-            <li>Download <code>SDS-Remote-…-windows-x64-standalone.zip</code> from <a href="https://github.com/sds-remote/sds-remote/releases">Releases</a>.</li>
-            <li>Unzip and start <code>SDS Remote.exe</code>.</li>
+            <li>Download <code>ScopeDeck-…-windows-x64-standalone.zip</code> from <a href="https://github.com/scopedeck/scopedeck/releases">Releases</a>.</li>
+            <li>Unzip and start <code>ScopeDeck.exe</code>.</li>
             <li>Enter the scope's IP address and click <b>Connect</b>.</li>
           </ol>
         </div>
         <div class="card">
           <h3>Linux &amp; macOS</h3>
           <ol class="steps">
-            <li>Download the <code>SDS-Remote-server-…</code> archive for your platform.</li>
-            <li>Unpack it and run <code>./Siglent.Server</code>.</li>
+            <li>Download the <code>ScopeDeck-server-…</code> archive for your platform.</li>
+            <li>Unpack it and run <code>./scopedeck-server</code>.</li>
             <li>Open <a href="http://localhost:5180">http://localhost:5180</a> in your browser and connect.</li>
           </ol>
         </div>
@@ -163,7 +163,7 @@
 
     <section>
       <h2>Supported oscilloscopes</h2>
-      <p class="lead">SDS Remote uses plain SCPI over TCP (port 5025), which the Siglent SDS1000X-E series supports out of the box.</p>
+      <p class="lead">ScopeDeck uses plain SCPI over TCP (port 5025), which the Siglent SDS1000X-E series supports out of the box.</p>
       <div class="table-wrap">
         <table>
           <tr><th>Model</th><th>Status</th></tr>
@@ -174,7 +174,8 @@
     </section>
 
     <footer>
-      <p>SDS Remote is open source under the MIT license. <a href="https://github.com/sds-remote/sds-remote/issues">Report an issue</a> · <a href="https://github.com/sds-remote/sds-remote/blob/main/ROADMAP.md">Roadmap</a></p>
+      <p>ScopeDeck is open source under the MIT license. <a href="https://github.com/scopedeck/scopedeck/issues">Report an issue</a> · <a href="https://github.com/scopedeck/scopedeck/blob/main/ROADMAP.md">Roadmap</a></p>
+      <p>Related: <a href="https://github.com/klumw/sdsremote">klumw/sdsremote</a>, a Flutter app for the same scopes with a virtual front panel and macro recorder.</p>
       <p>Not affiliated with or endorsed by Siglent Technologies. Siglent and EasyScopeX are trademarks of their respective owners.</p>
     </footer>
   </div>

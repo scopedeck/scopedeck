@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Version>0.1.0-dev</Version>
     <Authors>yuriikostenko</Authors>
-    <Product>SDS Remote</Product>
+    <Product>ScopeDeck</Product>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>
