@@ -186,8 +186,8 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "PNSU?": return Block("PNSU", Encoding.ASCII.GetBytes(SetupXml()));
                 // Gate commands are accepted; like FW 1.3.27, MEGS? gets no answer.
                 case "MEGS" or "MEGA" or "MEGB": return null;
-                // Front-panel keys are accepted but have no effect on the fake scope.
-                case "$$SY_FP": return null;
+                // Front-panel keys: CH1/CH2 work like on the scope, the others are accepted without effect.
+                case "$$SY_FP": PressKey(arg); return null;
                 case "WFSU":
                     var p = arg.Split(',', StringSplitOptions.TrimEntries);
                     for (int i = 0; i + 1 < p.Length; i += 2)
@@ -237,6 +237,23 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "PAVA?": return Line(prefix + "PAVA", Measurements(ch));
             }
             return null;
+        }
+    }
+
+    private int _selected = 1;
+
+    /// <summary>CH1/CH2 keys (39/40): an off channel is switched on and selected, an unselected one is selected,
+    /// the selected one is switched off and stays selected (as on the SDS1202X-E).</summary>
+    private void PressKey(string arg)
+    {
+        int n = arg.Split(',')[0].Trim() switch { "39" => 1, "40" => 2, _ => 0 };
+        if (n == 0) return;
+        var c = _s.Channels[n - 1];
+        if (c.On && _selected == n) SetChannel(n, c with { On = false });
+        else
+        {
+            SetChannel(n, c with { On = true });
+            _selected = n;
         }
     }
 

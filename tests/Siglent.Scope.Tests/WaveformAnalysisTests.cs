@@ -11,7 +11,7 @@ public class WaveformAnalysisTests
     {
         var v = Square(10_000, 1e-6);   // 10 ms, 1000 samples per cycle
 
-        var s = WaveformAnalysis.Compute(v, 0, 1e-6, voltsPerDiv: 1);
+        var s = WaveformAnalysis.Compute(v, 0, 1e-6, voltsPerDiv: 1)!;
 
         Assert.Equal(1000, s.Frequency!.Value, 0.5);
         Assert.Equal(0.5, s.Duty!.Value, 0.01);
@@ -28,7 +28,7 @@ public class WaveformAnalysisTests
         // 1 kHz sampled every 0.7 ms (1.4 samples per cycle), like the calibrator at 100 ms/div with 2000 points.
         var v = Square(2000, 0.7e-3);
 
-        var s = WaveformAnalysis.Compute(v, 0, 0.7e-3, voltsPerDiv: 1);
+        var s = WaveformAnalysis.Compute(v, 0, 0.7e-3, voltsPerDiv: 1)!;
 
         Assert.True(s.Aliased);
         Assert.Null(s.Frequency);
@@ -40,7 +40,14 @@ public class WaveformAnalysisTests
         var rnd = new Random(1);
         var v = Enumerable.Range(0, 5000).Select(_ => (float)(rnd.NextDouble() * 0.02)).ToArray();
 
-        Assert.Null(WaveformAnalysis.Compute(v, 0, 1e-6, voltsPerDiv: 1).Frequency);
+        Assert.Null(WaveformAnalysis.Compute(v, 0, 1e-6, voltsPerDiv: 1)!.Frequency);
+    }
+
+    [Fact]
+    public void NoSamplesGiveNoStats()
+    {
+        // E.g. a channel switched off between the settings and the waveform read: NaN would break the JSON.
+        Assert.Null(WaveformAnalysis.Compute([], 0, 1e-6, voltsPerDiv: 1));
     }
 
     [Fact]

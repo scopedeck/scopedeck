@@ -43,9 +43,10 @@ public static class WaveformAnalysis
     /// <param name="t0">Time of sample 0.</param>
     /// <param name="dt">Sample interval.</param>
     /// <param name="voltsPerDiv">Below 0.3 div peak-to-peak the record counts as noise (no frequency).</param>
-    public static WaveformStats Compute(ReadOnlySpan<float> v, double t0, double dt, double voltsPerDiv)
+    /// <returns>Null without samples (a channel switched off during the read, or an empty gate window).</returns>
+    public static WaveformStats? Compute(ReadOnlySpan<float> v, double t0, double dt, double voltsPerDiv)
     {
-        if (v.Length == 0) return new WaveformStats(double.NaN, double.NaN, double.NaN, double.NaN, null, null, false, []);
+        if (v.Length == 0) return null;
 
         double max = double.NegativeInfinity, min = double.PositiveInfinity, sum = 0, sumSq = 0;
         foreach (var x in v)

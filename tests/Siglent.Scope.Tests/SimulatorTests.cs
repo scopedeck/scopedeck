@@ -83,7 +83,17 @@ public sealed class SimulatorTests : IAsyncLifetime
     [Fact]
     public async Task PressesOnlyKnownPanelKeys()
     {
+        // CH2 key: selects C2; pressed again switches it off; a third press switches it on again. A channel switched
+        // off stays selected, so the next CH1 press only selects C1 (as on the SDS1202X-E).
+        async Task<bool> On(int n) => (await _scope.GetSettingsAsync()).Channels.Single(c => c.Channel == n).Enabled;
+        await _scope.PressPanelKeyAsync(40);
+        Assert.True(await On(2));
+        await _scope.PressPanelKeyAsync(40);
+        Assert.False(await On(2));
         await _scope.PressPanelKeyAsync(39);
+        Assert.True(await On(1));
+        await _scope.PressPanelKeyAsync(40);
+        Assert.True(await On(2));
         await _scope.PressPanelKeyAsync(7, -1);
         await _scope.PressPanelKeyAsync(16, 0);
 

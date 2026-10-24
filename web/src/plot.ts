@@ -67,7 +67,7 @@ export class ScopePlot {
   xy = false;
   /** Persistence decay time in ms; 0 = off, Infinity = infinite. */
   persistence = 0;
-  /** The selected channel, drawn on top of the others (like the scope's active channel). */
+  /** The selected channel, drawn behind the other live traces (as the scope draws its selected channel). */
   active = 1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -218,9 +218,9 @@ export class ScopePlot {
 
   // ---------- drawing ----------
 
-  /** Drawing order: references, other traces, the active channel. */
+  /** Drawing order: references, the selected channel, the other traces. */
   private layer(channel: number): number {
-    return isRef(channel) ? 0 : channel === this.active ? 2 : 1;
+    return isRef(channel) ? 0 : channel === this.active ? 1 : 2;
   }
 
   draw(frame: WaveformFrame | null, settings: ScopeSettings | null): void {
@@ -252,7 +252,7 @@ export class ScopePlot {
     ctx.beginPath();
     ctx.rect(a.x, a.y, a.w, a.h);
     ctx.clip();
-    // References first, so live traces are drawn on top of them; the active channel last.
+    // References first, so live traces are drawn on top of them; then the selected channel, then the others.
     const ordered = [...frame.channels].sort((p, q) => this.layer(p.channel) - this.layer(q.channel));
     for (const wf of ordered) this.trace(ctx, wf, isRef(wf.channel) ? 0.8 : 1);
     ctx.restore();

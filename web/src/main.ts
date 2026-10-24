@@ -40,7 +40,7 @@ const state = {
   log: null as string[] | null,
   math: null as MathSettings | null,
   historyPlaying: false,
-  /** The selected channel: drawn on top and highlighted, like the active channel on the scope. */
+  /** The selected channel: highlighted and, like on the scope, drawn behind the other channels. */
   activeChannel: 1,
 };
 
@@ -1062,7 +1062,7 @@ function buildChannelPanels(): void {
     panel.style.setProperty("--ch", channelColor(n));
     panel.innerHTML = `
       <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label>
-        <button class="ch-name" data-f="name" title="Like the scope's channel button: on → to front → off">Channel ${n}</button>
+        <button class="ch-name" data-f="name" title="Presses the scope's channel button: selects the channel (it moves behind the other), pressed again switches it off">Channel ${n}</button>
         <button class="flag-btn bw-btn" data-f="bwl" title="20 MHz bandwidth limit">20M</button>
         <button class="flag-btn" data-f="inv" title="Invert the channel">INV</button>
         <button class="flag-btn" data-f="more" title="Unit and skew">⋯</button></h2>
@@ -1140,13 +1140,24 @@ function buildChannelPanels(): void {
   }
 }
 
+/** Front-panel key codes of the channel buttons. */
+const CHANNEL_KEYS: Record<number, number> = { 1: 39, 2: 40 };
+
 /**
- * The scope's channel button: an off channel is switched on and selected, an on channel is brought to the front,
- * and the selected channel is switched off (the next enabled channel becomes the selected one).
+ * The scope's channel button: an off channel is switched on and selected, an unselected one is selected (and,
+ * as on the scope, drawn behind the others), and the selected one is switched off. CH1/CH2 press the scope's own
+ * key, so the scope's selection and menu follow; the app's selection is then the channel pressed last.
  */
 function pressChannel(n: number): void {
   const ch = state.settings?.channels.find((c) => c.channel === n);
   if (!ch) return;
+  const key = CHANNEL_KEYS[n];
+  if (key !== undefined) {
+    // Like the scope, a channel switched off this way stays selected; the next press of another channel selects it.
+    state.activeChannel = n;
+    act(() => api.panel(key));
+    return;
+  }
   if (!ch.enabled) {
     state.activeChannel = n;
     act(() => api.channel(n, { enabled: true }));
@@ -1159,10 +1170,14 @@ function pressChannel(n: number): void {
   }
 }
 
-/** Keeps the selected channel on an enabled one, if any. */
+/**
+ * Channels with a scope key (CH1/CH2) keep their selection when switched off, as on the scope; for others the
+ * selection moves to an enabled channel.
+ */
 function syncActiveChannel(channels: ChannelSettings[]): void {
   const on = channels.filter((c) => c.enabled).map((c) => c.channel);
-  if (on.length > 0 && !on.includes(state.activeChannel)) state.activeChannel = on[0];
+  const keepsSelection = CHANNEL_KEYS[state.activeChannel] !== undefined;
+  if (!keepsSelection && on.length > 0 && !on.includes(state.activeChannel)) state.activeChannel = on[0];
   plot.active = state.activeChannel;
 }
 
@@ -1500,6 +1515,7 @@ function panelKnob(label: string, key: number, title?: string): HTMLElement {
 /** Sends key presses in order; once the last one is done, the screen and the settings are refreshed. */
 function pressPanel(key: number, value: number): void {
   if (!state.connected) return;
+  for (const [n, k] of Object.entries(CHANNEL_KEYS)) if (k === key) state.activeChannel = Number(n);
   fp.pending++;
   fp.queue = fp.queue.then(async () => {
     try {

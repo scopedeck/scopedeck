@@ -36,7 +36,7 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 
 ## Done in RC 7
 
-- **Active channel** — clicking a channel's name cycles on → to front → off, like the scope's channel buttons.
+- **Active channel** — clicking a channel's name presses the scope's channel button (select, then off).
 - **Virtual front panel** — the scope's screen with soft keys, buttons and knobs (`$$SY_FP`, not in the guide).
 
 ## Later
