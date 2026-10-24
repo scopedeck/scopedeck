@@ -198,6 +198,7 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "PFSC": _pf.Source = arg.ToUpperInvariant(); return null;
                 case "PFSC?": return Line("PFSC", _pf.Source);
                 case "PFST":
+                    if (!_pf.Enabled) return null;
                     var pfst = arg.Split(',', StringSplitOptions.TrimEntries);
                     (_pf.X, _pf.Y) = (double.Parse(pfst[1], CultureInfo.InvariantCulture), double.Parse(pfst[3], CultureInfo.InvariantCulture));
                     return null;

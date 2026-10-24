@@ -597,8 +597,8 @@ public sealed class SiglentScope : IAsyncDisposable
 
     /// <summary>
     /// Changes the pass/fail test. The guide's PFDS TEST,… is ignored on FW 1.3.27; the test is enabled with the
-    /// undocumented PFEN, and the scope only accepts PFCM and PFOP while it is enabled, so creating a mask or
-    /// starting the test enables it first. Disabling stops the test before PFEN OFF.
+    /// undocumented PFEN, and the scope only accepts PFST, PFCM and PFOP while it is enabled, so changing the
+    /// tolerance, creating a mask or starting the test enables it first. Disabling stops the test before PFEN OFF.
     /// </summary>
     public Task<PassFailState> UpdatePassFailAsync(PassFailUpdate update, CancellationToken ct = default)
     {
@@ -620,7 +620,9 @@ public sealed class SiglentScope : IAsyncDisposable
             }
             string OnOff(bool on) => on ? "ON" : "OFF";
 
-            bool enable = update.Enabled == true || update.CreateMask || update.Running == true;
+            // PFST is ignored too while the test is disabled; Enabled: false (applied last) switches it off again.
+            bool enable = update.Enabled == true || update.CreateMask || update.Running == true
+                || update.XMask is not null || update.YMask is not null;
             if (enable) await Send("PFEN ON");
             if (source is not null) await Send($"PFSC {source}");
             if (update.XMask is not null || update.YMask is not null)

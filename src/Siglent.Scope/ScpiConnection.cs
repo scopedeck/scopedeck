@@ -19,6 +19,13 @@ public sealed class ScpiConnection : IAsyncDisposable
     private int _len;
 
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// A text query without an answer after this long is sent once more (then <see cref="Timeout"/> applies). The
+    /// SDS1202X-E drops input that arrives while it is busy, e.g. a query right after a pass/fail command; its
+    /// slowest regular answers (PAVA? ALL) take about 0.5 s.
+    /// </summary>
+    public TimeSpan ResendAfter { get; set; } = TimeSpan.FromSeconds(1.5);
     public TimeSpan BinaryTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     private ScpiConnection(TcpClient client)
@@ -72,11 +79,24 @@ public sealed class ScpiConnection : IAsyncDisposable
         });
     }
 
-    /// <summary>Sends a query and returns the single-line response without the terminator.</summary>
+    /// <summary>
+    /// Sends a query and returns the single-line response without the terminator. A query the scope dropped is
+    /// sent once more after <see cref="ResendAfter"/>.
+    /// </summary>
     public async Task<string> QueryAsync(string query, CancellationToken ct = default)
     {
         await WriteAsync(query, ct);
-        return await WithTimeout(Timeout, ct, async token =>
+        if (ResendAfter < Timeout)
+        {
+            try { return await ReadResponseAsync(ResendAfter, ct); }
+            catch (TimeoutException) { }
+            await WriteAsync(query, ct);
+        }
+        return await ReadResponseAsync(Timeout, ct);
+    }
+
+    private Task<string> ReadResponseAsync(TimeSpan timeout, CancellationToken ct) =>
+        WithTimeout(timeout, ct, async token =>
         {
             // Binary responses end with extra "\n" bytes; a real response is never empty.
             string line;
@@ -84,7 +104,6 @@ public sealed class ScpiConnection : IAsyncDisposable
             while (line.Length == 0);
             return line;
         });
-    }
 
     /// <summary>
     /// Sends a query that answers with an IEEE 488.2 definite-length block, e.g.

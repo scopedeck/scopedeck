@@ -103,6 +103,9 @@ public sealed class SimulatorTests : IAsyncLifetime
 
         pf = await _scope.UpdatePassFailAsync(new PassFailUpdate(Enabled: false));
         Assert.False(pf.Enabled || pf.Running);
+        // The tolerance can be set with the test off (it is enabled for PFST and switched off again).
+        pf = await _scope.UpdatePassFailAsync(new PassFailUpdate(XMask: 0.2, YMask: 0.2, Enabled: false));
+        Assert.Equal((0.2, 0.2, false), (pf.XMask, pf.YMask, pf.Enabled));
         await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdatePassFailAsync(new PassFailUpdate(XMask: 5)));
         await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdatePassFailAsync(new PassFailUpdate(Source: "C3")));
     }

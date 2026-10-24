@@ -154,7 +154,11 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   `PFCM` and `PFOP` work only while the test is enabled; `PFOP ON` resets the counters. The scope does not draw
   the mask, so ScopeDeck draws its own from the same waveform. Input that arrives while the scope is still taking a
   pass/fail command is lost (`*OPC?` right after `PFST` went unanswered); ScopeDeck waits 50 ms after each one.
-  Before a test has run, `PFDD?` can report leftovers like `FAIL,865,PASS,-865,TOTAL,0`.
+  `PFST` is ignored while the test is off. Before a test has run, `PFDD?` can report leftovers like
+  `FAIL,865,PASS,-865,TOTAL,0`.
+- **Dropped input:** the scope sometimes ignores a command that arrives while it is busy (right after a pass/fail
+  command, or one sent within a millisecond of the previous one). ScopeDeck sends a text query once more when it gets
+  no answer within 1.5 s.
 
 ## Related projects
 
