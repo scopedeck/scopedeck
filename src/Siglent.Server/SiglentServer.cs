@@ -20,6 +20,7 @@ public static class SiglentServer
         });
         builder.Services.AddSingleton<ScopeService>();
         builder.Services.AddSingleton<UserSettings>();
+        builder.Services.AddSingleton(sp => new MacroStore(sp.GetRequiredService<ILogger<MacroStore>>()));
         builder.Services.AddSingleton<UpdateChecker>();
         builder.Services.AddSingleton<UpdateInstaller>();
         builder.Services.AddProblemDetails();
@@ -109,6 +110,16 @@ public static class SiglentServer
         api.MapGet("/frame", (ScopeService scope, int? maxPoints, double? start, double? end, double? gateStart, double? gateEnd, CancellationToken ct) =>
             scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1,
                 gateStart is { } gs && gateEnd is { } ge ? (gs, ge) : null, ct)));
+
+        // Macros are replayed by the UI through the endpoints above; the server only stores them.
+        api.MapGet("/macros", (MacroStore macros) => macros.List());
+        api.MapPut("/macros", (Macro macro, MacroStore macros) =>
+        {
+            macros.Save(macro);
+            return Results.NoContent();
+        });
+        api.MapDelete("/macros/{name}", (string name, MacroStore macros) =>
+            macros.Delete(name) ? Results.NoContent() : Results.NotFound());
 
         api.MapGet("/passfail", (ScopeService scope, CancellationToken ct) =>
             scope.RunAsync(s => s.GetPassFailAsync(ct)));

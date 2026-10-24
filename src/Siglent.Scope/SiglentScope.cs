@@ -591,8 +591,6 @@ public sealed class SiglentScope : IAsyncDisposable
     /// <summary>Mask tolerance range in divisions (programming guide).</summary>
     public const double MinMask = 0.04, MaxMask = 4;
 
-    private static readonly TimeSpan PassFailCommandGap = TimeSpan.FromMilliseconds(50);
-
     public Task<PassFailState> GetPassFailAsync(CancellationToken ct = default) => Locked(() => ReadPassFailAsync(ct));
 
     /// <summary>
@@ -610,12 +608,11 @@ public sealed class SiglentScope : IAsyncDisposable
 
         return Locked(async () =>
         {
+            // *OPC? after each command: the next one is only sent once the scope has taken this one (the
+            // connection already leaves a short gap after a command, see ScpiConnection.CommandGap).
             async Task Send(string command)
             {
                 await _scpi.WriteAsync(command, ct);
-                // Input that arrives while the scope is still taking a pass/fail command is lost: an *OPC? sent
-                // right after PFST went unanswered in 2 of 3 tries; with 10 ms in between it never did.
-                await Task.Delay(PassFailCommandGap, ct);
                 await _scpi.QueryAsync("*OPC?", ct);
             }
             string OnOff(bool on) => on ? "ON" : "OFF";

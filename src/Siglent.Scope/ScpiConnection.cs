@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Siglent.Scope;
 
@@ -8,7 +10,7 @@ namespace Siglent.Scope;
 /// Raw SCPI over a TCP socket (port 5025 on SDS1000X-E). No VISA required.
 /// Not thread-safe: callers must serialize access.
 /// </summary>
-public sealed class ScpiConnection : IAsyncDisposable
+public sealed partial class ScpiConnection : IAsyncDisposable
 {
     public const int DefaultPort = 5025;
 
@@ -26,6 +28,28 @@ public sealed class ScpiConnection : IAsyncDisposable
     /// slowest regular answers (PAVA? ALL) take about 0.5 s.
     /// </summary>
     public TimeSpan ResendAfter { get; set; } = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>
+    /// Pause after a command without an answer before anything else is sent. Input that reaches the SDS1202X-E
+    /// while it is still taking a setting is lost or garbles it: "C2:VDIV 10V" followed at once by *OPC? became
+    /// 5 mV/div, and an *OPC? right after PFST went unanswered; 10 ms in between avoided both.
+    /// </summary>
+    public TimeSpan CommandGap { get; set; } = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>
+    /// Pause after channel settings that may switch the input relays (<see cref="IsSlowCommand"/>): after
+    /// "C1:VDIV 2V" the next command was lost with up to 50 ms in between, never with 100 ms.
+    /// </summary>
+    public TimeSpan SlowCommandGap { get; set; } = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>When the last command without an answer was sent, and the pause it needs before the next write.</summary>
+    private long _lastCommandAt;
+    private TimeSpan _gap;
+
+    public static bool IsSlowCommand(string command) => SlowCommand().IsMatch(command);
+
+    [GeneratedRegex(@"^\s*(C\d:(VDIV|VOLT_DIV|OFST|OFFSET|CPL|COUPLING|ATTN|ATTENUATION|TRA|TRACE)|BWL|BANDWIDTH_LIMIT)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SlowCommand();
     public TimeSpan BinaryTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     private ScpiConnection(TcpClient client)
@@ -58,12 +82,26 @@ public sealed class ScpiConnection : IAsyncDisposable
 
     public async Task WriteAsync(string command, CancellationToken ct = default)
     {
+        await SendAsync(command, ct);
+        if (command.Contains('?')) return;
+        _lastCommandAt = Stopwatch.GetTimestamp();
+        // WFSU (before every waveform read) only selects what WF? returns and has always been taken at once.
+        _gap = IsSlowCommand(command) ? SlowCommandGap
+            : command.StartsWith("WFSU", StringComparison.OrdinalIgnoreCase) ? TimeSpan.Zero
+            : CommandGap;
+    }
+
+    private async Task SendAsync(string command, CancellationToken ct)
+    {
+        var wait = _gap - Stopwatch.GetElapsedTime(_lastCommandAt);
+        if (_lastCommandAt != 0 && wait > TimeSpan.Zero) await Task.Delay(wait, ct);
         DiscardPending();
         await WithTimeout(Timeout, ct, async token =>
         {
             await _stream.WriteAsync(Encoding.ASCII.GetBytes(command + "\n"), token);
             return 0;
         });
+        _lastCommandAt = 0;
     }
 
     /// <summary>Sends a command with a definite-length binary block: "PNSU #9000045836&lt;data&gt;\n".</summary>

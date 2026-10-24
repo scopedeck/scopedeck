@@ -150,6 +150,23 @@ export interface UpdateProgress {
   error: string | null;
 }
 
+/** A macro step: a POST to one of ScopeDeck's endpoints, or (path null) a pause of waitMs. */
+export interface MacroStep {
+  path: string | null;
+  body?: unknown;
+  waitMs?: number | null;
+  /** Time since the previous step while recording. */
+  delayMs?: number | null;
+}
+
+export interface Macro {
+  name: string;
+  steps: MacroStep[];
+}
+
+/** Told about every successful POST (path without query string, JSON body); used by the macro recorder. */
+export const recorder: { onCall: ((path: string, body: unknown) => void) | null } = { onCall: null };
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -173,6 +190,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     }
     throw new ApiError(message, res.status);
   }
+  if (method === "POST" && !raw) recorder.onCall?.(url.split("?")[0], body);
   if (res.status === 204) return undefined as T;
   const type = res.headers.get("Content-Type") ?? "";
   return (type.includes("json") ? res.json() : res.blob()) as Promise<T>;
@@ -220,6 +238,11 @@ export const api = {
   loadSetup: (file: Blob) => request<void>("POST", "/api/setup", file),
   saveMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/save`),
   recallMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/recall`),
+  macros: () => request<Macro[]>("GET", "/api/macros"),
+  saveMacro: (macro: Macro) => request<void>("PUT", "/api/macros", macro),
+  deleteMacro: (name: string) => request<void>("DELETE", `/api/macros/${encodeURIComponent(name)}`),
+  /** Replays one macro step. */
+  post: (path: string, body?: unknown) => request<unknown>("POST", path, body),
   passFail: () => request<PassFailState>("GET", "/api/passfail"),
   updatePassFail: (update: PassFailUpdate) => request<PassFailState>("POST", "/api/passfail", update),
   /** Presses a front-panel key; knobs turn with value −1/+1 and are pushed with 0. */

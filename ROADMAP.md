@@ -48,11 +48,15 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **Pass/Fail mask testing** — create a mask from a good waveform, count pass/fail, stop or beep on fail (`PF*`,
   `PFEN` not in the guide); the mask band is drawn on the plot.
 
+## Done in RC 10
+
+- **Macro recorder** — record settings, front-panel keys and SCPI commands with pauses; replay, save, export/import.
+- **Reliable commands** — pauses after settings (longer after relay switching) and resending dropped queries.
+
 ## Later
 
 - **Serial triggers** — I²C, SPI, UART, CAN, LIN with address/ID/data qualifiers (`TRIIC:*`, `TRSPI:*`,
   `TRUART:*`, `TRCAN:*`, `TRLIN:*`).
-- **Macro recorder** — record and replay SCPI sequences for repeatable test procedures.
 - **Native desktop windows on macOS and Linux** — swap WinForms/WebView2 for Photino.NET (WebKit on macOS/Linux).
 
 ## Low priority / limited

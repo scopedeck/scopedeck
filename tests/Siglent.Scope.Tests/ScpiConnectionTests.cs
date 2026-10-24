@@ -44,6 +44,38 @@ public class ScpiConnectionTests
         Assert.Equal("ok 3", await scpi.QueryAsync("TDIV?"));
     }
 
+    [Theory]
+    [InlineData("C1:VDIV 2V", true)]
+    [InlineData("c2:ofst -1.5V", true)]
+    [InlineData("C1:CPL A1M", true)]
+    [InlineData("C2:ATTN 10", true)]
+    [InlineData("C1:TRA ON", true)]
+    [InlineData("BWL C1,ON", true)]
+    [InlineData("C1:VDIV?", false)]
+    [InlineData("TDIV 1MS", false)]
+    [InlineData("C1:TRLV 1.5V", false)]
+    [InlineData("WFSU SP,1,NP,0,FP,0", false)]
+    public void KnowsWhichCommandsSwitchTheInputRelays(string command, bool slow) =>
+        Assert.Equal(slow, ScpiConnection.IsSlowCommand(command) && !command.Contains('?'));
+
+    [Fact]
+    public async Task WaitsAfterACommandBeforeTheNextOne()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (port, _) = DroppingServer(drop: 0, cts.Token);
+        await using var scpi = await ScpiConnection.ConnectAsync("127.0.0.1", port);
+        scpi.CommandGap = TimeSpan.FromMilliseconds(100);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await scpi.WriteAsync("TDIV 1MS");
+        await scpi.QueryAsync("TDIV?");
+        Assert.True(sw.ElapsedMilliseconds >= 95, $"took {sw.ElapsedMilliseconds} ms");
+
+        sw.Restart();
+        await scpi.QueryAsync("TDIV?"); // no command in between: no pause
+        Assert.True(sw.ElapsedMilliseconds < 80, $"took {sw.ElapsedMilliseconds} ms");
+    }
+
     [Fact]
     public async Task GivesUpWhenTheResendIsDroppedToo()
     {

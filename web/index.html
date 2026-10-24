@@ -25,6 +25,7 @@
           <span class="spacer"></span>
           <span id="zoom-info" class="zoom-info" hidden></span>
           <button id="zoom-reset" class="mini" title="Show the whole record (double-click the plot)" hidden>Reset zoom</button>
+          <span id="fps" class="muted fps"></span>
         </div>
         <div id="plot-wrap" class="plot-wrap">
           <canvas id="plot"></canvas>
@@ -60,6 +61,7 @@
             </select>
           </label>
           <button id="panel-btn" class="toggle" title="The scope's front panel: its screen, keys and knobs">Panel</button>
+          <button id="macro-btn" class="toggle" title="Record and replay sequences of scope settings, key presses and SCPI commands">Macro</button>
           <button id="log-btn" class="toggle" title="Record measurements of every frame; click again to stop and download CSV">Log</button>
           <details class="menu" id="save-menu">
             <summary>Save / Load</summary>
@@ -85,7 +87,6 @@
               <option value="20000">20k</option>
             </select>
           </label>
-          <span id="fps" class="muted"></span>
         </div>
         <section id="math-panel" class="strip" hidden>
           <b class="strip-title math-title">M</b>
@@ -129,6 +130,33 @@
           <label class="inline" title="The scope beeps for each failed waveform"><input type="checkbox" id="pf-beep" /> Beep</label>
           <span class="spacer"></span>
           <span id="pf-counts" class="mono pf-counts"></span>
+        </section>
+        <section id="macro-panel" class="strip macro-strip" hidden>
+          <b class="strip-title">Macro</b>
+          <button id="mac-record" class="toggle" title="Records every change you make to the scope until you stop">● Record</button>
+          <label class="inline" title="Adds a pause at the end of the steps">Pause
+            <span class="unit-input"><input id="mac-wait" type="number" min="0" max="3600" step="0.1" value="1" /><span>s</span></span></label>
+          <button id="mac-add-wait">Add pause</button>
+          <input id="mac-name" class="mac-name" placeholder="Macro name" maxlength="60" />
+          <button id="mac-save" title="Saves the steps under this name (replaces a macro with the same name)">Save</button>
+          <span class="sep"></span>
+          <select id="mac-list" title="Saved macros; choosing one loads its steps"></select>
+          <button id="mac-run" class="toggle" title="Replays the steps">▶ Run</button>
+          <label class="inline" title="Replay with the pauses between the recorded steps instead of a short fixed gap"><input type="checkbox" id="mac-timing" /> Recorded timing</label>
+          <details class="menu" id="mac-menu">
+            <summary>More</summary>
+            <div class="menu-items">
+              <button id="mac-export">Export to file</button>
+              <button id="mac-import">Import from file…</button>
+              <button id="mac-clear">Clear steps</button>
+              <button id="mac-delete">Delete saved macro</button>
+            </div>
+          </details>
+          <input type="file" id="mac-file" accept=".json,application/json" hidden />
+          <details class="mac-steps">
+            <summary id="mac-summary">No steps</summary>
+            <ol id="mac-steps"></ol>
+          </details>
         </section>
         <section id="spectrum-panel" class="spectrum-panel" hidden>
           <div class="spectrum-head">

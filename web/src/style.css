@@ -254,6 +254,13 @@ body:not(.connected) .sidebar { opacity: 0.45; pointer-events: none; }
 .channel h2 { color: var(--ch); }
 .channel.off .row { opacity: 0.5; }
 
+.macro-strip { flex-wrap: wrap; }
+#macro-panel .unit-input input { width: 58px; }
+.mac-name { width: 140px; }
+.mac-steps { flex: 1 0 100%; font-size: 12px; }
+.mac-steps summary { cursor: pointer; color: var(--muted); }
+.mac-steps ol { margin: 4px 0 0; padding-left: 26px; max-height: 160px; overflow: auto; font-family: ui-monospace, Consolas, monospace; }
+.mac-steps li.current { color: var(--accent); font-weight: 600; }
 .pf-counts { white-space: pre; }
 .pf-fail { color: var(--danger); font-weight: 600; }
 #pf-panel .unit-input input { width: 58px; }
@@ -504,3 +511,6 @@ a.link-btn { margin-right: auto; align-self: center; font-size: 13px; color: var
 .gate-toggle input { accent-color: var(--accent); }
 .delays { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 2px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 .delays span span { color: var(--text); }
+
+.display-head .fps { font-size: 12px; white-space: nowrap; }
+

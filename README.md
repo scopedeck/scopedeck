@@ -45,6 +45,8 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 - **Log**: records measurements of every frame; click again to stop and download the CSV
 - **Pass/Fail mask test** (the scope's own): create a mask with an X/Y tolerance from a good waveform, then count
   passing and failing waveforms, optionally stopping or beeping on a fail. ScopeDeck draws the mask band on the plot
+- **Macros**: record what you change on the scope (settings, front-panel keys, SCPI commands), add pauses, save
+  under a name and replay — with a short fixed gap or the recorded timing. Export/import as JSON
 - **Front panel**: the scope's live screen with its soft keys, menu, channel, trigger and run buttons and all
   knobs (click to turn or push, or use the mouse wheel), for the scope's own menus that have no remote command
 - Scope screenshot (PNG), CSV export of the displayed waveform, PNG export of the plot, SCPI console
@@ -156,9 +158,13 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   pass/fail command is lost (`*OPC?` right after `PFST` went unanswered); ScopeDeck waits 50 ms after each one.
   `PFST` is ignored while the test is off. Before a test has run, `PFDD?` can report leftovers like
   `FAIL,865,PASS,-865,TOTAL,0`.
-- **Dropped input:** the scope sometimes ignores a command that arrives while it is busy (right after a pass/fail
-  command, or one sent within a millisecond of the previous one). ScopeDeck sends a text query once more when it gets
+- **Dropped input:** the scope loses or garbles input that arrives while it is still taking a setting. `C2:VDIV 10V`
+  followed at once by `*OPC?` became 5 mV/div; after a V/div change the next command was lost with up to 50 ms in
+  between (the input relays switch), never with 100 ms. ScopeDeck waits 20 ms after each setting and 150 ms after
+  V/div, offset, coupling, probe, channel on/off and bandwidth limit, and sends a text query once more when it gets
   no answer within 1.5 s.
+- After the scope has **stopped on a failed waveform**, the next `TRMD AUTO` switches Average to Normal (after a plain
+  Stop it does not); ScopeDeck puts the acquisition mode back when you resume.
 
 ## Related projects
 

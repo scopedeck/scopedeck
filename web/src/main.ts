@@ -2,8 +2,12 @@ import "./style.css";
 import {
   api,
   ApiError,
+  recorder,
+  type AcquisitionSettings,
   type ChannelSettings,
   type HistoryState,
+  type Macro,
+  type MacroStep,
   type PassFailState,
   type PassFailUpdate,
   type ScopeSettings,
@@ -12,6 +16,7 @@ import {
 } from "./api";
 import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
+import { describeStep, MAX_RECORDED_DELAY_MS, recordable, validSteps } from "./macro";
 import { buildMask } from "./mask";
 import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
 import { delayBetween, measure } from "./measure";
@@ -705,10 +710,27 @@ function showPassFail(next: PassFailState): void {
   state.passFailAt = performance.now();
   if (before?.running && !next.running && next.stopOnFail && next.fail > before.fail) {
     toast("A waveform failed the mask: the scope stopped. Press Auto or Normal to continue.", "info");
+    acquisitionBeforeFailStop = state.settings?.acquisition ?? null;
     void refreshSettings().catch(handleError);
   }
   if (!next.enabled) plot.mask = null;
   renderPassFail();
+}
+
+/**
+ * FW 1.3.27: after the scope has stopped on a failed waveform, the next TRMD AUTO switches Average to Normal
+ * (after a plain Stop it does not). The mode from before the stop is put back when the user resumes.
+ */
+let acquisitionBeforeFailStop: AcquisitionSettings | null = null;
+
+async function restoreAcquisitionAfterFailStop(): Promise<void> {
+  const before = acquisitionBeforeFailStop;
+  if (!before) return;
+  acquisitionBeforeFailStop = null;
+  const now = (await api.settings()).acquisition;
+  if (now.mode === before.mode && now.averages === before.averages) return;
+  await api.acquisition({ mode: before.mode, averages: before.averages });
+  toast(`The scope left ${before.mode === "AVERAGE" ? `average ×${before.averages}` : before.mode.toLowerCase()} mode when it stopped on the fail; it is restored.`, "info");
 }
 
 function renderPassFail(): void {
@@ -1333,7 +1355,12 @@ function stepValue(list: number[], current: number, dir: number): number | undef
 // ---------- controls ----------
 
 document.querySelectorAll<HTMLButtonElement>("#trig-mode button").forEach((b) =>
-  b.addEventListener("click", () => act(() => api.trigger({ mode: b.dataset.mode }))),
+  b.addEventListener("click", () =>
+    act(async () => {
+      await api.trigger({ mode: b.dataset.mode });
+      await restoreAcquisitionAfterFailStop();
+    }),
+  ),
 );
 $("autosetup-btn").addEventListener("click", () => act(() => api.autoSetup()));
 $<HTMLSelectElement>("tdiv").addEventListener("change", (e) =>
@@ -1692,6 +1719,212 @@ $("panel-btn").addEventListener("click", () => setPanelOpen(!fp.open));
 $("fp-close").addEventListener("click", () => setPanelOpen(false));
 $("panel-dialog").addEventListener("close", () => fp.open && setPanelOpen(false));
 $("fp-rate").addEventListener("change", schedulePanelRefresh);
+
+// ---------- macro recorder ----------
+
+/** Gap between replayed steps: the scope drops input that arrives while it is still busy with the last one. */
+const MACRO_STEP_GAP_MS = 150;
+
+const macro = {
+  steps: [] as MacroStep[],
+  saved: [] as Macro[],
+  recording: false,
+  lastAt: 0,
+  running: false,
+  cancel: false,
+  /** Index of the step being replayed, for the list. */
+  current: -1,
+};
+
+const PANEL_KEY_NAMES = new Map<number, string>([
+  ...PANEL_GROUPS.flatMap((g) => [...g.keys, ...(g.knobs ?? [])].map(([label, key]) => [key, label] as [number, string])),
+  [0, "Menu"],
+  ...[1, 2, 3, 4, 5, 6].map((n) => [n, `soft key ${n}`] as [number, string]),
+]);
+const PANEL_KNOBS = new Set(PANEL_GROUPS.flatMap((g) => (g.knobs ?? []).map(([, key]) => key)));
+
+function renderMacro(): void {
+  const rec = $("mac-record");
+  rec.classList.toggle("on", macro.recording);
+  rec.textContent = macro.recording ? "■ Stop recording" : "● Record";
+  const run = $("mac-run");
+  run.classList.toggle("on", macro.running);
+  run.textContent = macro.running ? `■ Stop (${macro.current + 1}/${macro.steps.length})` : "▶ Run";
+  const n = macro.steps.length;
+  $("mac-summary").textContent = n === 0 ? (macro.recording ? "Recording… change something on the scope" : "No steps") : `${n} step${n === 1 ? "" : "s"}`;
+  const list = $("mac-steps");
+  list.replaceChildren(
+    ...macro.steps.map((s, i) => {
+      const li = document.createElement("li");
+      li.textContent = describeStep(s, PANEL_KEY_NAMES, PANEL_KNOBS);
+      li.classList.toggle("current", macro.running && i === macro.current);
+      return li;
+    }),
+  );
+}
+
+function renderMacroList(select?: string): void {
+  const list = $<HTMLSelectElement>("mac-list");
+  list.replaceChildren(new Option(macro.saved.length ? "Saved macros…" : "No saved macros", ""));
+  for (const m of macro.saved) list.add(new Option(`${m.name} (${m.steps.length})`, m.name));
+  if (select) list.value = select;
+}
+
+async function loadMacros(select?: string): Promise<void> {
+  macro.saved = await api.macros();
+  renderMacroList(select);
+}
+
+function setRecording(on: boolean): void {
+  macro.recording = on;
+  if (on) {
+    macro.steps = [];
+    macro.lastAt = performance.now();
+    recorder.onCall = (path, body) => {
+      if (!recordable(path, body)) return;
+      const now = performance.now();
+      macro.steps.push({ path, body, delayMs: Math.min(Math.round(now - macro.lastAt), MAX_RECORDED_DELAY_MS) });
+      macro.lastAt = now;
+      renderMacro();
+    };
+  } else {
+    recorder.onCall = null;
+  }
+  renderMacro();
+}
+
+/** Waits ms, in slices, so that Stop takes effect during long pauses. */
+async function macroWait(ms: number): Promise<void> {
+  const end = performance.now() + ms;
+  while (!macro.cancel && performance.now() < end) await sleep(Math.min(100, end - performance.now()));
+}
+
+async function runMacro(): Promise<void> {
+  if (!state.connected) return toast("Connect to the oscilloscope first.");
+  if (macro.steps.length === 0) return toast("Record or load a macro first.", "info");
+  if (macro.recording) setRecording(false);
+  const timing = $<HTMLInputElement>("mac-timing").checked;
+  macro.running = true;
+  macro.cancel = false;
+  try {
+    for (let i = 0; i < macro.steps.length && !macro.cancel; i++) {
+      macro.current = i;
+      renderMacro();
+      const step = macro.steps[i];
+      if (!step.path) {
+        await macroWait(step.waitMs ?? 0);
+        continue;
+      }
+      await macroWait(i === 0 ? 0 : timing ? Math.max(MACRO_STEP_GAP_MS, step.delayMs ?? 0) : MACRO_STEP_GAP_MS);
+      if (macro.cancel) break;
+      try {
+        await api.post(step.path, step.body);
+      } catch (e) {
+        handleError(e);
+        toast(`The macro stopped at step ${i + 1}: ${describeStep(step, PANEL_KEY_NAMES, PANEL_KNOBS)}`);
+        break;
+      }
+    }
+  } finally {
+    macro.running = false;
+    macro.current = -1;
+    renderMacro();
+    await refreshSettings().catch(handleError);
+    await refreshPassFail().catch(handleError);
+    if (fp.open) void refreshPanelScreen();
+  }
+}
+
+$("macro-btn").addEventListener("click", () => {
+  const panel = $("macro-panel");
+  panel.hidden = !panel.hidden;
+  $("macro-btn").classList.toggle("on", !panel.hidden);
+  if (!panel.hidden) loadMacros().catch(handleError);
+  renderMacro();
+});
+$("mac-record").addEventListener("click", () => {
+  if (macro.running) return;
+  if (!macro.recording && !state.connected) return toast("Connect to the oscilloscope first.");
+  setRecording(!macro.recording);
+});
+$("mac-add-wait").addEventListener("click", () => {
+  const s = Number($<HTMLInputElement>("mac-wait").value);
+  if (!(s >= 0 && s <= 3600)) return toast("A pause is 0–3600 s.");
+  macro.steps.push({ path: null, waitMs: Math.round(s * 1000) });
+  macro.lastAt = performance.now();
+  renderMacro();
+});
+$("mac-save").addEventListener("click", async () => {
+  const name = $<HTMLInputElement>("mac-name").value.trim();
+  if (!name) return toast("Give the macro a name.");
+  if (macro.steps.length === 0) return toast("Record some steps first.", "info");
+  if (macro.recording) setRecording(false);
+  try {
+    await api.saveMacro({ name, steps: macro.steps });
+    await loadMacros(name);
+    toast(`Saved "${name}".`, "info");
+  } catch (e) {
+    handleError(e);
+  }
+});
+$("mac-list").addEventListener("change", (e) => {
+  const found = macro.saved.find((m) => m.name === (e.target as HTMLSelectElement).value);
+  if (!found || macro.running) return;
+  if (macro.recording) setRecording(false);
+  macro.steps = found.steps.map((s) => ({ ...s }));
+  $<HTMLInputElement>("mac-name").value = found.name;
+  renderMacro();
+});
+$("mac-run").addEventListener("click", () => {
+  if (macro.running) macro.cancel = true;
+  else void runMacro();
+});
+$("mac-clear").addEventListener("click", () => {
+  $<HTMLDetailsElement>("mac-menu").open = false;
+  if (macro.running) return;
+  macro.steps = [];
+  renderMacro();
+});
+$("mac-delete").addEventListener("click", async () => {
+  $<HTMLDetailsElement>("mac-menu").open = false;
+  const name = $<HTMLSelectElement>("mac-list").value;
+  if (!name) return toast("Choose a saved macro to delete.", "info");
+  try {
+    await api.deleteMacro(name);
+    await loadMacros();
+    toast(`Deleted "${name}".`, "info");
+  } catch (e) {
+    handleError(e);
+  }
+});
+$("mac-export").addEventListener("click", () => {
+  $<HTMLDetailsElement>("mac-menu").open = false;
+  if (macro.steps.length === 0) return toast("There are no steps to export.", "info");
+  const name = $<HTMLInputElement>("mac-name").value.trim() || "macro";
+  const json = JSON.stringify({ name, steps: macro.steps } satisfies Macro, null, 2);
+  download(new Blob([json], { type: "application/json" }), `${name.replace(/[^\w.-]+/g, "_")}.json`);
+});
+$("mac-import").addEventListener("click", () => {
+  $<HTMLDetailsElement>("mac-menu").open = false;
+  $<HTMLInputElement>("mac-file").click();
+});
+$("mac-file").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || macro.running) return;
+  try {
+    const data = JSON.parse(await file.text()) as Partial<Macro>;
+    if (!validSteps(data.steps)) return toast("Not a ScopeDeck macro, or it contains steps a macro may not make.");
+    if (macro.recording) setRecording(false);
+    macro.steps = data.steps;
+    $<HTMLInputElement>("mac-name").value = typeof data.name === "string" ? data.name.slice(0, 60) : "";
+    renderMacro();
+    toast(`Loaded ${data.steps.length} steps. Save to keep the macro.`, "info");
+  } catch {
+    toast("The file is not valid JSON.");
+  }
+});
 
 // ---------- SCPI console ----------
 
