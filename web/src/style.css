@@ -427,3 +427,14 @@ button.danger-outline { border-color: color-mix(in srgb, var(--danger) 60%, var(
 .channel h2 .flag-btn + .flag-btn, .channel h2 .bw-btn + .flag-btn { margin-left: 0; }
 .channel .extra-row[hidden] { display: none; }
 .measure-note { margin: 4px 2px 0; font-size: 12px; color: var(--warn); }
+.update-badge {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  text-decoration: none;
+}
+.update-badge:hover { filter: brightness(1.15); }

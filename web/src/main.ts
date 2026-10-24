@@ -1283,6 +1283,15 @@ $("console-form").addEventListener("submit", async (e) => {
   try {
     const status = await api.status();
     $("version").textContent = status.version ? `v${status.version}` : "";
+    // Runs in the background; nothing is shown when offline or up to date.
+    api.update().then((u) => {
+      if (!u.available || !u.url) return;
+      const badge = $<HTMLAnchorElement>("update-badge");
+      badge.href = u.url;
+      badge.textContent = `Update available: v${u.latest}`;
+      badge.title = `ScopeDeck v${u.latest} is available (you have v${u.current}). Click to open the release page.`;
+      badge.hidden = false;
+    }, () => {});
     $<HTMLInputElement>("host").value = status.host;
     if (status.connected && status.identity) await onConnected(status.identity.model, status.identity.firmware);
   } catch (e) {

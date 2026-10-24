@@ -68,6 +68,10 @@ dotnet publish src/Siglent.Server -c Release -r linux-x64 -p:PublishSingleFile=t
 ./out/scopedeck-server     # then open http://localhost:5180
 ```
 
+**Update check:** on start, ScopeDeck asks GitHub once whether a newer release exists and shows an *Update available*
+badge next to the version (pre-release builds are offered newer pre-releases too). Only the request itself is sent.
+Switch it off with `"UpdateCheck": { "Enabled": false }` in `appsettings.json`; builds from source (`-dev`) never check.
+
 The server listens on localhost only. To use the app from another device, start it with
 `--urls http://0.0.0.0:5180` (anyone on your network can then control the scope).
 

@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.FileProviders;
 using Siglent.Scope;
@@ -21,6 +20,7 @@ public static class SiglentServer
         });
         builder.Services.AddSingleton<ScopeService>();
         builder.Services.AddSingleton<UserSettings>();
+        builder.Services.AddSingleton<UpdateChecker>();
         builder.Services.AddProblemDetails();
         configure?.Invoke(builder);
 
@@ -68,12 +68,11 @@ public static class SiglentServer
             }
         });
 
-        string version = typeof(SiglentServer).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+        api.MapGet("/update", (UpdateChecker updates) => updates.GetAsync());
 
         api.MapGet("/status", (ScopeService scope, UserSettings settings) => new
         {
-            Version = version,
+            Version = UpdateChecker.CurrentVersion,
             Connected = scope.Identity is not null,
             // The simulator always uses its own address; otherwise prefer the last address that worked.
             Host = scope.Host ?? (simulated ? defaultHost : settings.LastHost ?? defaultHost),

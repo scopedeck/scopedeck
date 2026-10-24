@@ -130,6 +130,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 export const api = {
   status: () => request<Status>("GET", "/api/status"),
+  /** Result of the server's once-per-run check for a newer GitHub release. */
+  update: () => request<{ current: string; latest: string | null; url: string | null; available: boolean }>("GET", "/api/update"),
   connect: (host: string) => request<ScopeIdentity>("POST", "/api/connect", { host }),
   disconnect: () => request<void>("POST", "/api/disconnect"),
   settings: () => request<ScopeSettings>("GET", "/api/settings"),
