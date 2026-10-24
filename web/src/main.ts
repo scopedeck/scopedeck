@@ -127,6 +127,7 @@ function setConnected(connected: boolean, label?: string): void {
   if (!connected) {
     state.frame = null;
     state.settings = null;
+    setPanelOpen(false);
     render();
   } else {
     startLoop();
@@ -1420,6 +1421,148 @@ $("shot-save").addEventListener("click", () => {
   a.click();
 });
 $("shot-close").addEventListener("click", () => $<HTMLDialogElement>("shot-dialog").close());
+
+// ---------- virtual front panel ----------
+
+type PanelKey = [label: string, key: number, title?: string];
+
+/** Key codes of $$SY_FP (from klumw/sdsremote, checked on an SDS1202X-E); knobs turn with ±1, push with 0. */
+const PANEL_GROUPS: { title: string; keys: PanelKey[]; knobs?: PanelKey[] }[] = [
+  {
+    title: "Menu",
+    keys: [["Cursors", 22], ["Acquire", 27], ["Save/Recall", 28], ["Measure", 26], ["Display", 23], ["Utility", 24],
+      ["Clear sweeps", 47], ["History", 48], ["Decode", 29]],
+    knobs: [["Adjust", 15, "Universal knob: changes the selected menu item, push to select"]],
+  },
+  { title: "Run control", keys: [["Auto setup", 11], ["Run/Stop", 12]] },
+  {
+    title: "Vertical",
+    keys: [["CH1", 39, "Selects channel 1; pressed again switches it off"], ["CH2", 40, "Selects channel 2; pressed again switches it off"],
+      ["Math", 31, "The scope's math menu; pressed again switches the scope's math display off"], ["Ref", 32]],
+    knobs: [["CH1 V/div", 35, "Push: coarse/fine"], ["CH1 position", 43, "Push: zero"], ["CH2 V/div", 36, "Push: coarse/fine"], ["CH2 position", 44, "Push: zero"]],
+  },
+  { title: "Horizontal", keys: [["Roll", 49]], knobs: [["Time/div", 7], ["Position", 10, "Push: zero delay"]] },
+  { title: "Trigger", keys: [["Setup", 18], ["Auto", 17], ["Normal", 19], ["Single", 20]], knobs: [["Level", 16, "Push: 50 %"]] },
+];
+
+const fp = { open: false, queue: Promise.resolve(), pending: 0, shotBusy: false, shotAgain: false, timer: 0, url: "" };
+
+function buildFrontPanel(): void {
+  const soft = $("fp-softkeys");
+  for (let i = 1; i <= 6; i++) soft.append(panelButton("", i, `Soft key ${i} (below the scope's menu item)`));
+  soft.append(panelButton("Menu", 0, "Shows or hides the scope's soft-key menu"));
+  const controls = $("fp-controls");
+  for (const g of PANEL_GROUPS) {
+    const section = document.createElement("section");
+    section.className = "fp-group";
+    section.innerHTML = `<h3>${g.title}</h3>`;
+    const keys = document.createElement("div");
+    keys.className = "fp-keys";
+    for (const [label, key, title] of g.keys) keys.append(panelButton(label, key, title));
+    section.append(keys);
+    for (const [label, key, title] of g.knobs ?? []) section.append(panelKnob(label, key, title));
+    controls.append(section);
+  }
+}
+
+function panelButton(label: string, key: number, title?: string): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.textContent = label;
+  if (title) b.title = title;
+  b.addEventListener("click", () => pressPanel(key, 1));
+  return b;
+}
+
+/** A knob: turn left/right one step, push in the middle, or use the mouse wheel over it. */
+function panelKnob(label: string, key: number, title?: string): HTMLElement {
+  const knob = document.createElement("div");
+  knob.className = "fp-knob";
+  knob.title = `${title ? `${title}. ` : ""}Mouse wheel turns the knob.`;
+  for (const [text, value, tip] of [["⟲", -1, "Turn left"], [label, 0, "Push"], ["⟳", 1, "Turn right"]] as const) {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.title = tip;
+    if (value === 0) b.className = "push";
+    b.addEventListener("click", () => pressPanel(key, value));
+    knob.append(b);
+  }
+  knob.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      pressPanel(key, e.deltaY < 0 ? 1 : -1);
+    },
+    { passive: false },
+  );
+  return knob;
+}
+
+/** Sends key presses in order; once the last one is done, the screen and the settings are refreshed. */
+function pressPanel(key: number, value: number): void {
+  if (!state.connected) return;
+  fp.pending++;
+  fp.queue = fp.queue.then(async () => {
+    try {
+      await api.panel(key, value);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      fp.pending--;
+    }
+    if (fp.pending === 0) {
+      // The scope needs a moment to draw the new menu.
+      setTimeout(refreshPanelScreen, 300);
+      await refreshSettings().catch(handleError);
+    }
+  });
+}
+
+async function refreshPanelScreen(): Promise<void> {
+  if (!fp.open || !state.connected) return;
+  if (fp.shotBusy) {
+    fp.shotAgain = true;
+    return;
+  }
+  fp.shotBusy = true;
+  try {
+    const bmp = await api.screenshot();
+    URL.revokeObjectURL(fp.url);
+    fp.url = URL.createObjectURL(bmp);
+    $<HTMLImageElement>("fp-img").src = fp.url;
+    $("fp-status").textContent = "";
+  } catch (e) {
+    $("fp-status").textContent = e instanceof Error ? e.message : String(e);
+  } finally {
+    fp.shotBusy = false;
+    if (fp.shotAgain) {
+      fp.shotAgain = false;
+      void refreshPanelScreen();
+    }
+  }
+}
+
+function schedulePanelRefresh(): void {
+  clearInterval(fp.timer);
+  const ms = Number($<HTMLSelectElement>("fp-rate").value);
+  if (fp.open && ms > 0) fp.timer = window.setInterval(refreshPanelScreen, ms);
+}
+
+function setPanelOpen(open: boolean): void {
+  if (open && !state.connected) return toast("Connect to the oscilloscope first.");
+  fp.open = open;
+  $("panel-btn").classList.toggle("on", open);
+  const dialog = $<HTMLDialogElement>("panel-dialog");
+  if (open && !dialog.open) dialog.show();
+  if (!open && dialog.open) dialog.close();
+  schedulePanelRefresh();
+  if (open) void refreshPanelScreen();
+}
+
+buildFrontPanel();
+$("panel-btn").addEventListener("click", () => setPanelOpen(!fp.open));
+$("fp-close").addEventListener("click", () => setPanelOpen(false));
+$("panel-dialog").addEventListener("close", () => fp.open && setPanelOpen(false));
+$("fp-rate").addEventListener("change", schedulePanelRefresh);
 
 // ---------- SCPI console ----------
 

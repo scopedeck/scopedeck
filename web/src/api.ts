@@ -203,5 +203,7 @@ export const api = {
   loadSetup: (file: Blob) => request<void>("POST", "/api/setup", file),
   saveMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/save`),
   recallMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/recall`),
+  /** Presses a front-panel key; knobs turn with value −1/+1 and are pushed with 0. */
+  panel: (key: number, value = 1) => request<void>("POST", "/api/panel", { key, value }),
   scpi: (command: string) => request<{ response: string | null }>("POST", "/api/scpi", { command }),
 };

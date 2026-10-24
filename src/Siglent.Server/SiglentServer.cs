@@ -110,6 +110,12 @@ public static class SiglentServer
             scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1,
                 gateStart is { } gs && gateEnd is { } ge ? (gs, ge) : null, ct)));
 
+        api.MapPost("/panel", async (PanelRequest request, ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.PressPanelKeyAsync(request.Key, request.Value ?? 1, ct));
+            return Results.NoContent();
+        });
+
         api.MapPost("/gate", async (GateRequest request, ScopeService scope, CancellationToken ct) =>
         {
             await scope.RunAsync(s => s.SetMeasurementGateAsync(
@@ -272,3 +278,5 @@ public record HistoryRequest(bool Enabled);
 /// <summary>Both times set: gate on (seconds relative to the trigger); otherwise gate off.</summary>
 public record GateRequest(double? Start, double? End);
 public record HistoryFrameRequest(int Frame);
+/// <summary>A front-panel key; for knobs Value is −1/+1 (turn) or 0 (push).</summary>
+public record PanelRequest(int Key, int? Value);

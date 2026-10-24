@@ -43,6 +43,8 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 - **Capture memory**: the complete acquisition (up to 14 Mpts per channel) as CSV. A running scope is paused
   for the transfer (~4 s for 7 Mpts) and then resumed
 - **Log**: records measurements of every frame; click again to stop and download the CSV
+- **Front panel**: the scope's live screen with its soft keys, menu, channel, trigger and run buttons and all
+  knobs (click to turn or push, or use the mouse wheel), for the scope's own menus that have no remote command
 - Scope screenshot (PNG), CSV export of the displayed waveform, PNG export of the plot, SCPI console
 
 ## Running
@@ -141,6 +143,10 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   disconnect. `C1-C2:MEAD? PHA` / `FRR` take ~0.2 s each and answer `****` when a channel has no signal or (PHA)
   less than a full period is on screen; the app's own delay needs only one rising edge per channel. Both use each
   channel's mid level, so a clipped trace (partly off screen) shifts the result on slow edges.
+- **Front-panel keys** (not in the guide): `$$SY_FP <key>,1` presses a key, `$$SY_FP <knob>,±1` turns a knob one
+  detent (+1 = clockwise) and `$$SY_FP <knob>,0` pushes it. Key codes are from klumw/sdsremote. Pressing Math twice
+  switches the scope's math display off again, which `MATH:TRA OFF` cannot. Default setup (13) and Print (25) are
+  not offered.
 
 ## Related projects
 

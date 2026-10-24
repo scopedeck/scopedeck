@@ -58,6 +58,7 @@
               <option value="Infinity">∞</option>
             </select>
           </label>
+          <button id="panel-btn" class="toggle" title="The scope's front panel: its screen, keys and knobs">Panel</button>
           <button id="log-btn" class="toggle" title="Record measurements of every frame; click again to stop and download CSV">Log</button>
           <details class="menu" id="save-menu">
             <summary>Save / Load</summary>
@@ -296,6 +297,31 @@
         <button id="shot-save">Save PNG</button>
         <button id="shot-close">Close</button>
       </div>
+    </dialog>
+
+    <dialog id="panel-dialog" class="panel-dialog">
+      <div class="fp-head">
+        <b>Front panel</b>
+        <span class="muted" id="fp-status"></span>
+        <span class="spacer"></span>
+        <label class="inline" title="How often the scope screen is refreshed">Screen
+          <select id="fp-rate">
+            <option value="0">After key presses</option>
+            <option value="2000" selected>Every 2 s</option>
+            <option value="5000">Every 5 s</option>
+          </select>
+        </label>
+        <button id="fp-close">Close</button>
+      </div>
+      <div class="fp-body">
+        <div class="fp-screen">
+          <img id="fp-img" alt="Oscilloscope screen" />
+          <div class="fp-softkeys" id="fp-softkeys"></div>
+        </div>
+        <div class="fp-controls" id="fp-controls"></div>
+      </div>
+      <p class="muted fp-note">Keys are sent with the scope's undocumented front-panel command. Default setup and
+        Print are left out; turning a knob with the mouse wheel moves it one step per notch.</p>
     </dialog>
 
     <dialog id="mem-dialog" class="small-dialog">

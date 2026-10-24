@@ -81,6 +81,19 @@ public sealed class SimulatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PressesOnlyKnownPanelKeys()
+    {
+        await _scope.PressPanelKeyAsync(39);
+        await _scope.PressPanelKeyAsync(7, -1);
+        await _scope.PressPanelKeyAsync(16, 0);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.PressPanelKeyAsync(13)); // Default setup
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.PressPanelKeyAsync(39, -1)); // a button cannot turn
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.PressPanelKeyAsync(7, 2));
+        Assert.True((await _scope.GetSettingsAsync()).Channels.Count > 0); // the connection still answers
+    }
+
+    [Fact]
     public async Task MeasuresDelayBetweenChannels()
     {
         // Skew C2 by 50 ns: the scope's FRR and the app's edge times must both see it.

@@ -253,6 +253,40 @@ body:not(.connected) .sidebar { opacity: 0.45; pointer-events: none; }
 .channel { border-left: 3px solid var(--ch); }
 .channel h2 { color: var(--ch); }
 .channel.off .row { opacity: 0.5; }
+
+/* ---------- virtual front panel (non-modal) ---------- */
+
+.panel-dialog {
+  position: fixed;
+  inset: 56px 16px auto auto;
+  margin: 0;
+  width: min(1060px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+.fp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.fp-head .spacer { flex: 1; }
+.fp-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.fp-screen { flex: 1 1 520px; min-width: 0; }
+.fp-screen img { display: block; width: 100%; aspect-ratio: 800 / 480; background: #000; border-radius: 4px; }
+/* Six soft keys under the scope's six menu items (they fill ~89 % of the screen width), then the Menu key. */
+.fp-softkeys { display: grid; grid-template-columns: repeat(6, 1fr) 11.5%; gap: 4px; margin-top: 6px; padding-left: 1%; }
+.fp-softkeys button { height: 22px; padding: 0; font-size: 11px; }
+.fp-controls { flex: 0 1 360px; display: grid; gap: 10px; }
+.fp-group h3 { margin: 0 0 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.fp-keys { display: flex; flex-wrap: wrap; gap: 4px; }
+.fp-keys button { padding: 3px 8px; font-size: 12px; }
+.fp-knob { display: inline-flex; margin: 5px 5px 0 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.fp-knob button { border: none; border-radius: 0; padding: 3px 7px; font-size: 12px; background: var(--surface-2); }
+.fp-knob button.push { border-inline: 1px solid var(--border); }
+.fp-note { margin: 10px 0 0; font-size: 11px; }
 .channel.active { border-left-width: 6px; background: color-mix(in srgb, var(--ch) 7%, var(--surface)); }
 .channel h2 .ch-name {
   background: none;

@@ -186,6 +186,8 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "PNSU?": return Block("PNSU", Encoding.ASCII.GetBytes(SetupXml()));
                 // Gate commands are accepted; like FW 1.3.27, MEGS? gets no answer.
                 case "MEGS" or "MEGA" or "MEGB": return null;
+                // Front-panel keys are accepted but have no effect on the fake scope.
+                case "$$SY_FP": return null;
                 case "WFSU":
                     var p = arg.Split(',', StringSplitOptions.TrimEntries);
                     for (int i = 0; i + 1 < p.Length; i += 2)

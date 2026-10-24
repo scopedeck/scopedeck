@@ -563,6 +563,29 @@ public sealed class SiglentScope : IAsyncDisposable
 
     public Task AutoSetupAsync(CancellationToken ct = default) => WriteAllAsync(["ASET"], ct);
 
+    // ---------- virtual front panel ----------
+
+    /// <summary>Front-panel buttons that can be pressed ($$SY_FP n,1); Default (13) and Print (25) are left out.</summary>
+    public static readonly IReadOnlySet<int> PanelButtons = new HashSet<int>
+    {
+        0, 1, 2, 3, 4, 5, 6, // Menu on/off and the six soft keys below the screen
+        11, 12, 17, 18, 19, 20, 22, 23, 24, 26, 27, 28, 29, 31, 32, 39, 40, 47, 48, 49,
+    };
+
+    /// <summary>Front-panel knobs: turned with $$SY_FP n,±1 (one detent), pushed with $$SY_FP n,0.</summary>
+    public static readonly IReadOnlySet<int> PanelKnobs = new HashSet<int> { 7, 10, 15, 16, 35, 36, 43, 44 };
+
+    /// <summary>
+    /// Presses a front-panel key or turns a knob by one detent (direction −1/+1; 0 pushes the knob) with the
+    /// undocumented $$SY_FP command (key codes from klumw/sdsremote, verified on an SDS1202X-E with FW 1.3.27).
+    /// </summary>
+    public Task PressPanelKeyAsync(int key, int value = 1, CancellationToken ct = default)
+    {
+        bool valid = PanelKnobs.Contains(key) ? value is -1 or 0 or 1 : PanelButtons.Contains(key) && value == 1;
+        if (!valid) throw new ArgumentException($"Unknown front-panel key {key},{value}.");
+        return WriteAllAsync([$"$$SY_FP {key},{value}"], ct);
+    }
+
     // ---------- history ----------
 
     /// <summary>Switches history mode on or off. While on, acquisition stops and WF? returns the selected frame.</summary>
