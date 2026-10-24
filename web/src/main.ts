@@ -317,6 +317,7 @@ function renderMeasurements(): void {
   const table = document.createElement("table");
   table.innerHTML = `<thead><tr><th></th>${titles.map((h) => `<th>${h}</th>`).join("")}</tr></thead>`;
   const body = table.createTBody();
+  let aliased = false;
   for (const wf of f.channels) {
     let cells: string[];
     if (scope && wf.channel !== MATH_CHANNEL) {
@@ -326,12 +327,20 @@ function renderMeasurements(): void {
       cells = SCOPE_COLUMNS.map(() => "—");
     } else {
       const m = measure(wf);
+      aliased ||= m.aliased;
       cells = APP_COLUMNS.map(([, fn]) => fn(m, unitOf(wf)));
     }
     const row = body.insertRow();
     row.innerHTML = `<th style="color:${channelColor(wf.channel)}">${channelName(wf.channel)}</th>${cells.map((c) => `<td>${c}</td>`).join("")}`;
   }
   el.replaceChildren(table);
+  if (aliased) {
+    const note = document.createElement("p");
+    note.className = "measure-note";
+    note.textContent =
+      "Freq, Period, Duty: too many signal cycles for the transferred points. Use “Scope” measurements, more Points, zoom in, or a faster time/div.";
+    el.append(note);
+  }
 }
 
 async function refreshScopeMeasurements(): Promise<void> {

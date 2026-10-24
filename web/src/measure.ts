@@ -8,6 +8,8 @@ export interface Measurements {
   rms: number;
   frequency: number;
   duty: number;
+  /** Too few samples per cycle: frequency, period and duty are not reported. */
+  aliased: boolean;
 }
 
 /** Basic measurements computed from the transferred (possibly decimated) samples. */
@@ -43,6 +45,7 @@ export function measure(wf: ChannelWaveform): Measurements {
   }
   let frequency = NaN;
   let duty = NaN;
+  let aliased = false;
   // Below ~0.3 div peak-to-peak the trace is mostly noise; crossings would give nonsense frequencies.
   const hasSignal = pkpk > wf.voltsPerDiv * 0.3;
   if (rising.length >= 2 && hasSignal) {
@@ -52,9 +55,16 @@ export function measure(wf: ChannelWaveform): Measurements {
     let hi = 0;
     for (let i = rising[0]; i < rising[rising.length - 1]; i++) if (v[i] > mid) hi++;
     duty = hi / (rising[rising.length - 1] - rising[0]);
+    // With fewer than ~6 transferred samples per cycle the waveform is aliased (e.g. 1 kHz at 100 ms/div
+    // shows up as a few hundred Hz): report nothing rather than a wrong number.
+    if (1 / (frequency * wf.sampleInterval) < 6) {
+      aliased = true;
+      frequency = NaN;
+      duty = NaN;
+    }
   } else if (hasSignal) {
     duty = highSamples / n;
   }
 
-  return { max, min, pkpk, mean: sum / n, rms: Math.sqrt(sumSq / n), frequency, duty };
+  return { max, min, pkpk, mean: sum / n, rms: Math.sqrt(sumSq / n), frequency, duty, aliased };
 }
