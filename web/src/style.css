@@ -146,6 +146,9 @@ input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 
   gap: 6px;
 }
 .spectrum-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Live values in the header must not wrap: a second line would push the diagram down. */
+#fft-info { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fft-readout { top: 10px; left: auto; right: 14px; }
 .spectrum-wrap { position: relative; height: 220px; }
 .spectrum-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
 

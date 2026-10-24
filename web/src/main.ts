@@ -384,7 +384,9 @@ function renderSpectrum(): void {
     ? `RBW ${si(s.df, "Hz")} · Nyquist ${si(s.df * s.dbv.length, "Hz")}` +
       (s.peak ? ` · Peak ${si(s.peak.frequency, "Hz", 5)} ${s.peak.dbv.toFixed(1)} dBV` : "")
     : wf === undefined && state.frame ? `${channelName(source)} is off` : "";
-  $("fft-readout").textContent = s ? spectrumPlot.readout(s) ?? "" : "";
+  const readout = s ? spectrumPlot.readout(s) : null;
+  $("fft-readout").textContent = readout ?? "";
+  $("fft-readout").hidden = !readout;
 }
 
 {

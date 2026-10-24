@@ -107,10 +107,11 @@
               </select>
             </label>
             <span id="fft-info" class="muted"></span>
-            <span class="spacer"></span>
-            <span id="fft-readout" class="mono"></span>
           </div>
-          <div class="spectrum-wrap"><canvas id="spectrum"></canvas></div>
+          <div class="spectrum-wrap">
+            <canvas id="spectrum"></canvas>
+            <div id="fft-readout" class="readout fft-readout" hidden></div>
+          </div>
         </section>
         <div class="measure-head">
           <span>Measurements by</span>
