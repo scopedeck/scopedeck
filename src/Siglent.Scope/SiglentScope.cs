@@ -9,6 +9,7 @@ public sealed class SiglentScope : IAsyncDisposable
     private static readonly HashSet<string> TriggerModes = ["AUTO", "NORM", "SINGLE", "STOP"];
     private static readonly HashSet<string> Slopes = ["POS", "NEG", "WINDOW"];
     private static readonly HashSet<string> Couplings = ["A1M", "D1M", "GND"];
+    private static readonly HashSet<string> Units = ["V", "A"];
     private static readonly HashSet<string> TriggerCouplings = ["AC", "DC", "HFREJ", "LFREJ"];
     private static readonly HashSet<string> TriggerTypes = ["EDGE", "GLIT", "SLEW", "INTV", "RUNT", "DROP", "TV"];
     private static readonly HashSet<string> AcquisitionModes = ["SAMPLING", "PEAK_DETECT", "AVERAGE", "HIGH_RES"];
@@ -76,7 +77,10 @@ public sealed class SiglentScope : IAsyncDisposable
                 ScpiValue.ParseNumber(await Q($"C{ch}:OFST?")),
                 ScpiValue.StripHeader(await Q($"C{ch}:CPL?")),
                 ScpiValue.ParseNumber(await Q($"C{ch}:ATTN?")),
-                FindPair(bwl, $"C{ch}") is "ON"));
+                FindPair(bwl, $"C{ch}") is "ON",
+                ScpiValue.ParseBool(await Q($"C{ch}:INVS?")),
+                ScpiValue.StripHeader(await Q($"C{ch}:UNIT?")).ToUpperInvariant(),
+                ScpiValue.ParseNumber(await Q($"C{ch}:SKEW?"))));
         }
 
         // ACQW? → "SAMPLING" or "AVERAGE,16". Never send AVGA?: on FW 1.3.27 that query switches the
@@ -165,8 +169,13 @@ public sealed class SiglentScope : IAsyncDisposable
     /// Reads the displayed waveform of every enabled channel. Long memories are decimated on the
     /// scope (WFSU SP) so that at most about <paramref name="maxPoints"/> points cross the network.
     /// </summary>
-    public Task<WaveformFrame> GetFrameAsync(int maxPoints = 2000, CancellationToken ct = default) =>
-        Locked(() => ReadWaveformsAsync(Math.Max(1, maxPoints), ct));
+    /// <param name="start">Start of the transferred range as a fraction of the record (0 = left screen edge).</param>
+    /// <param name="end">End of the range (1 = right screen edge). A narrow range is read at higher resolution (zoom).</param>
+    public Task<WaveformFrame> GetFrameAsync(int maxPoints = 2000, double start = 0, double end = 1, CancellationToken ct = default)
+    {
+        if (!(start >= 0 && end <= 1 && start < end)) throw new ArgumentException("The range must satisfy 0 ≤ start < end ≤ 1.");
+        return Locked(() => ReadWaveformsAsync(Math.Max(1, maxPoints), ct, start, end));
+    }
 
     /// <summary>
     /// Reads the complete acquisition memory (up to 14 Mpts per channel) of every enabled channel.
@@ -203,7 +212,7 @@ public sealed class SiglentScope : IAsyncDisposable
     }
 
     /// <param name="maxPoints">Decimate to about this many points on the scope (WFSU SP); null reads every sample.</param>
-    private async Task<WaveformFrame> ReadWaveformsAsync(int? maxPoints, CancellationToken ct)
+    private async Task<WaveformFrame> ReadWaveformsAsync(int? maxPoints, CancellationToken ct, double start = 0, double end = 1)
     {
         double tdiv = ScpiValue.ParseNumber(await Q("TDIV?"));
         double delay = -ScpiValue.ParseNumber(await Q("TRDL?"));
@@ -220,14 +229,17 @@ public sealed class SiglentScope : IAsyncDisposable
             long total = (long)ScpiValue.ParseNumber(await Q($"SANU? C{ch}"));
             if (total <= 0) continue;
 
-            int step = maxPoints is { } max ? (int)Math.Max(1, Math.Ceiling(total / (double)max)) : 1;
-            long count = (total + step - 1) / step;
+            // FP selects the first sample, which makes zoomed views full-resolution (verified on hardware).
+            long first = (long)Math.Floor(start * total);
+            long span = Math.Max(1, (long)Math.Ceiling(end * total) - first);
+            int step = maxPoints is { } max ? (int)Math.Max(1, Math.Ceiling(span / (double)max)) : 1;
+            long count = (span + step - 1) / step;
             // NP must be non-zero: with NP 0 the scope ignores SP.
-            await _scpi.WriteAsync($"WFSU SP,{step},NP,{count},FP,0", ct);
+            await _scpi.WriteAsync($"WFSU SP,{step},NP,{count},FP,{first}", ct);
             var data = await _scpi.QueryBlockAsync($"C{ch}:WF? DAT2", ct);
 
             channels.Add(new ChannelWaveform(
-                ch, vdiv, ofst, t0, step / sara, total,
+                ch, vdiv, ofst, t0 + first / sara, step / sara, total,
                 WaveformDecoder.ToVolts(data, vdiv, ofst)));
         }
 
@@ -251,6 +263,14 @@ public sealed class SiglentScope : IAsyncDisposable
         if (update.VoltsPerDiv is { } vdiv) commands.Add($"{c}:VDIV {ScpiValue.Format(vdiv, "V")}");
         if (update.Offset is { } ofst) commands.Add($"{c}:OFST {ScpiValue.Format(ofst, "V")}");
         if (update.BandwidthLimit is { } bwl) commands.Add($"BWL {c},{(bwl ? "ON" : "OFF")}");
+        if (update.Inverted is { } inv) commands.Add($"{c}:INVS {(inv ? "ON" : "OFF")}");
+        // Switching the unit can change the trigger level on FW 1.3.27; settings are re-read afterwards.
+        if (update.Unit is { } unit) commands.Add($"{c}:UNIT {Checked(unit, Units)}");
+        if (update.Skew is { } skew)
+        {
+            if (Math.Abs(skew) > 100e-9) throw new ArgumentException("Skew must be within ±100 ns.");
+            commands.Add($"{c}:SKEW {ScpiValue.Format(skew, "S")}");
+        }
         return WriteAllAsync(commands, ct);
     }
 

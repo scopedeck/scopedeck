@@ -98,8 +98,8 @@ public static class SiglentServer
         api.MapGet("/settings", (ScopeService scope, CancellationToken ct) =>
             scope.RunAsync(s => s.GetSettingsAsync(ct)));
 
-        api.MapGet("/frame", (ScopeService scope, int? maxPoints, CancellationToken ct) =>
-            scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), ct)));
+        api.MapGet("/frame", (ScopeService scope, int? maxPoints, double? start, double? end, CancellationToken ct) =>
+            scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1, ct)));
 
         api.MapGet("/measurements/{channel:int}", (int channel, ScopeService scope, CancellationToken ct) =>
             scope.RunAsync(s => s.GetMeasurementsAsync(channel, ct)));

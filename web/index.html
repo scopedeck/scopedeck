@@ -21,6 +21,9 @@
         <div class="display-head">
           <div id="acq-status" class="acq-status">—</div>
           <div id="info-line" class="info-line"></div>
+          <span class="spacer"></span>
+          <span id="zoom-info" class="zoom-info" hidden></span>
+          <button id="zoom-reset" class="mini" title="Show the whole record (double-click the plot)" hidden>Reset zoom</button>
         </div>
         <div id="plot-wrap" class="plot-wrap">
           <canvas id="plot"></canvas>
@@ -43,6 +46,17 @@
           <button id="fft-btn" class="toggle" title="Show the spectrum of a trace">FFT</button>
           <button id="math-btn" class="toggle" title="Add a math trace computed from the channels">Math</button>
           <button id="history-btn" class="toggle" title="Browse the scope's stored acquisitions (stops acquisition while on)">History</button>
+          <button id="ref-btn" class="toggle" title="Reference traces: freeze a trace or load a CSV to compare against">Ref</button>
+          <button id="xy-btn" class="toggle" title="XY mode: C1 horizontal, C2 vertical">XY</button>
+          <label class="inline" title="Afterglow of earlier acquisitions">Persist
+            <select id="persist">
+              <option value="0">Off</option>
+              <option value="500">0.5 s</option>
+              <option value="1000">1 s</option>
+              <option value="5000">5 s</option>
+              <option value="Infinity">∞</option>
+            </select>
+          </label>
           <button id="log-btn" class="toggle" title="Record measurements of every frame; click again to stop and download CSV">Log</button>
           <details class="menu" id="save-menu">
             <summary>Save / Load</summary>
@@ -78,6 +92,14 @@
           <label class="inline">Scale <select id="math-scale"></select></label>
           <label class="inline" title="Value at the center line">Center <span class="unit-input"><input id="math-offset" type="number" step="any" value="0" /><span id="math-unit">V</span></span></label>
           <span class="muted strip-note">Computed from the transferred samples</span>
+        </section>
+        <section id="ref-panel" class="strip" hidden>
+          <b class="strip-title">Ref</b>
+          <select id="ref-source" title="Trace to freeze"></select>
+          <button id="ref-save">Save as reference</button>
+          <button id="ref-load" title="Load a CSV exported by ScopeDeck (time in the first column)">Load CSV…</button>
+          <input type="file" id="ref-file" accept=".csv,text/csv" hidden />
+          <div id="ref-list" class="ref-list"></div>
         </section>
         <section id="history-panel" class="strip" hidden>
           <b class="strip-title">History</b>

@@ -22,6 +22,11 @@ export interface ChannelSettings {
   coupling: string;
   probe: number;
   bandwidthLimit: boolean;
+  inverted: boolean;
+  /** V or A */
+  unit: string;
+  /** Channel-to-channel skew in seconds (±100 ns). */
+  skew: number;
 }
 
 /**
@@ -128,7 +133,9 @@ export const api = {
   connect: (host: string) => request<ScopeIdentity>("POST", "/api/connect", { host }),
   disconnect: () => request<void>("POST", "/api/disconnect"),
   settings: () => request<ScopeSettings>("GET", "/api/settings"),
-  frame: (maxPoints: number) => request<WaveformFrame>("GET", `/api/frame?maxPoints=${maxPoints}`),
+  /** start/end: part of the record to read (0–1); a narrow range is read at full resolution (zoom). */
+  frame: (maxPoints: number, start = 0, end = 1) =>
+    request<WaveformFrame>("GET", `/api/frame?maxPoints=${maxPoints}${start > 0 || end < 1 ? `&start=${start}&end=${end}` : ""}`),
   screenshot: () => request<Blob>("GET", "/api/screenshot"),
   /** The scope's own measurements (PAVA? ALL); null where the scope reports none. */
   measurements: (n: number) => request<Record<string, number | null>>("GET", `/api/measurements/${n}`),

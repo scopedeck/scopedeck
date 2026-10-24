@@ -4,7 +4,8 @@ import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
 import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
 import { measure } from "./measure";
-import { channelColor, channelName, ScopePlot, type CursorHit, type CursorMode } from "./plot";
+import { channelColor, channelName, isRef, ScopePlot, type CursorHit, type CursorMode } from "./plot";
+import { References } from "./refs";
 import { SpectrumPlot } from "./spectrum";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -36,12 +37,19 @@ const state = {
   historyPlaying: false,
 };
 
-/** The scope's frame plus the app-side math trace (channel 0) when math is on. */
+const refs = new References();
+
+/**
+ * What is shown: the scope's channels (with their unit), the app-side math trace (channel 0) when math is on,
+ * and the visible reference traces (101–104).
+ */
 function displayFrame(): WaveformFrame | null {
   const f = state.frame;
-  if (!f || !state.math) return f;
-  const m = computeMath(f, state.math);
-  return m ? { ...f, channels: [...f.channels, m] } : f;
+  if (!f) return null;
+  const units = new Map(state.settings?.channels.map((c) => [c.channel, c.unit]) ?? []);
+  const channels = f.channels.map((c) => (units.get(c.channel) === "A" ? { ...c, unit: "A" } : c));
+  const m = state.math ? computeMath({ ...f, channels }, state.math) : null;
+  return { ...f, channels: [...channels, ...(m ? [m] : []), ...refs.visible()] };
 }
 
 /** Unit of a trace: V for channels, the operation's unit for math. */
@@ -166,8 +174,8 @@ async function startLoop(): Promise<void> {
       }
       try {
         if (performance.now() - state.settingsAt > SETTINGS_REFRESH_MS) await refreshSettings();
-        state.frame = await api.frame(Number($<HTMLSelectElement>("points").value));
-        if (state.log) appendLogRow(state.frame);
+        await fetchFrame();
+        if (state.log && state.frame) appendLogRow(state.frame);
         if (state.measureSource === "scope" && performance.now() - state.scopeMeasurementsAt > SCOPE_MEASURE_REFRESH_MS) {
           await refreshScopeMeasurements();
         }
@@ -190,6 +198,31 @@ async function startLoop(): Promise<void> {
     state.loopRunning = false;
     $("fps").textContent = "";
   }
+}
+
+/**
+ * Reads a frame; while zoomed, only the visible part of the record (at up to full resolution).
+ * A new timebase or delay invalidates the zoom window and the afterglow.
+ */
+async function fetchFrame(): Promise<void> {
+  const points = Number($<HTMLSelectElement>("points").value);
+  const record = plot.recordWindow(state.frame);
+  let start = 0;
+  let end = 1;
+  if (plot.view && record) {
+    start = Math.max(0, (plot.view.start - record.start) / record.span);
+    end = Math.min(1, (plot.view.start + plot.view.span - record.start) / record.span);
+    if (!(end > start)) [start, end] = [0, 1];
+  }
+  const frame = await api.frame(points, start, end);
+  const previous = state.frame;
+  if (previous && (previous.timePerDiv !== frame.timePerDiv || previous.triggerDelay !== frame.triggerDelay)) {
+    setZoom(null);
+    plot.clearPersistence();
+  }
+  state.frame = frame;
+  const shown = displayFrame();
+  if (shown) plot.accumulate(shown);
 }
 
 async function refreshSettings(): Promise<void> {
@@ -423,7 +456,11 @@ $("fft-btn").addEventListener("click", () => {
 
 /** Fills the FFT source and voltage-cursor lists with the channels, plus M while math is on. */
 function updateTraceOptions(): void {
-  const traces = [...Array.from({ length: state.channelCount }, (_, i) => i + 1), ...(state.math ? [MATH_CHANNEL] : [])];
+  const traces = [
+    ...Array.from({ length: state.channelCount }, (_, i) => i + 1),
+    ...(state.math ? [MATH_CHANNEL] : []),
+    ...refs.items.map((r) => r.id),
+  ];
   for (const [id, prefix] of [["fft-source", ""], ["cursor-ref", "Y on "]] as const) {
     const sel = $<HTMLSelectElement>(id);
     const keep = sel.value;
@@ -477,9 +514,81 @@ $("math-btn").addEventListener("click", () => {
   $("math-panel").hidden = !on;
   updateTraceOptions();
   updateMath();
+  if (!$("ref-panel").hidden) renderRefs();
   render();
 });
 for (const id of ["math-op", "math-a", "math-b", "math-scale", "math-offset"]) $(id).addEventListener("change", updateMath);
+
+// ---------- references ----------
+
+function renderRefs(): void {
+  const list = $("ref-list");
+  list.replaceChildren(
+    ...refs.items.map((r) => {
+      const chip = document.createElement("span");
+      chip.className = `chip${r.visible ? "" : " hidden-ref"}`;
+      chip.style.setProperty("--c", channelColor(r.id));
+      chip.title = r.label;
+      chip.innerHTML = `<b>${channelName(r.id)}</b><span class="muted"></span>`;
+      chip.querySelector("span")!.textContent = r.label.length > 28 ? `${r.label.slice(0, 27)}…` : r.label;
+      const eye = document.createElement("button");
+      eye.textContent = r.visible ? "Hide" : "Show";
+      eye.addEventListener("click", () => {
+        r.visible = !r.visible;
+        renderRefs();
+        render();
+      });
+      const del = document.createElement("button");
+      del.textContent = "✕";
+      del.title = "Remove";
+      del.addEventListener("click", () => {
+        refs.remove(r.id);
+        renderRefs();
+        render();
+      });
+      chip.append(eye, del);
+      return chip;
+    }),
+  );
+  updateTraceOptions();
+  // Traces that can be frozen: channels and math, not other references.
+  const src = $<HTMLSelectElement>("ref-source");
+  const keep = src.value;
+  const traces = (displayFrame()?.channels ?? []).filter((c) => !isRef(c.channel)).map((c) => c.channel);
+  src.replaceChildren(...traces.map((ch) => new Option(channelName(ch), String(ch))));
+  if (traces.map(String).includes(keep)) src.value = keep;
+}
+
+$("ref-btn").addEventListener("click", () => {
+  const on = $("ref-panel").hidden;
+  $("ref-panel").hidden = !on;
+  $("ref-btn").classList.toggle("on", on);
+  if (on) renderRefs();
+});
+$("ref-save").addEventListener("click", () => {
+  const ch = Number($<HTMLSelectElement>("ref-source").value);
+  const wf = displayFrame()?.channels.find((c) => c.channel === ch);
+  if (!wf) return toast("That trace has no data right now.", "info");
+  const time = new Date().toLocaleTimeString();
+  if (!refs.save(wf, `${channelName(ch)} at ${time}`)) return toast("All four reference slots are in use; remove one first.", "info");
+  renderRefs();
+  render();
+});
+$("ref-load").addEventListener("click", () => $<HTMLInputElement>("ref-file").click());
+$<HTMLInputElement>("ref-file").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    const n = refs.loadCsv(await file.text(), file.name);
+    toast(`Loaded ${n} reference trace${n === 1 ? "" : "s"} from ${file.name}.`, "info");
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err));
+  }
+  renderRefs();
+  render();
+});
 
 // ---------- history ----------
 
@@ -505,7 +614,7 @@ async function goToFrame(frame: number): Promise<void> {
   const next = await api.historyFrame(target);
   state.settings = { ...state.settings!, history: next };
   renderHistory(next);
-  state.frame = await api.frame(Number($<HTMLSelectElement>("points").value));
+  await fetchFrame();
   render();
 }
 
@@ -804,18 +913,25 @@ function buildChannelPanels(): void {
     panel.style.setProperty("--ch", channelColor(n));
     panel.innerHTML = `
       <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label> Channel ${n}
-        <button class="bw-btn" data-f="bwl" title="20 MHz bandwidth limit">BW 20M</button></h2>
+        <button class="flag-btn bw-btn" data-f="bwl" title="20 MHz bandwidth limit">20M</button>
+        <button class="flag-btn" data-f="inv" title="Invert the channel">INV</button>
+        <button class="flag-btn" data-f="more" title="Unit and skew">⋯</button></h2>
       <div class="row"><label>Volts/div</label>
         <div class="stepper">
-          <button data-dir="-1" aria-label="More sensitive">‹</button>
+          <button data-dir="-1" aria-label="More sensitive" title="Shift+click: fine step">‹</button>
           <select data-f="voltsPerDiv"></select>
-          <button data-dir="1" aria-label="Less sensitive">›</button>
+          <button data-dir="1" aria-label="Less sensitive" title="Shift+click: fine step">›</button>
         </div></div>
-      <div class="row"><label>Offset</label><div class="unit-input"><input type="number" step="any" data-f="offset" /><span>V</span></div></div>
+      <div class="row"><label>Offset</label><div class="unit-input"><input type="number" step="any" data-f="offset" /><span data-f="offset-unit">V</span></div></div>
       <div class="row"><label>Input</label>
         <div class="pair">
           <select data-f="coupling" title="Coupling"><option value="D1M">DC</option><option value="A1M">AC</option><option value="GND">GND</option></select>
           <select data-f="probe" title="Probe attenuation"></select>
+        </div></div>
+      <div class="row extra-row" data-f="extra" hidden><label>Unit · skew</label>
+        <div class="pair">
+          <select data-f="unit" title="Unit (A for current probes)"><option value="V">Volts</option><option value="A">Amps</option></select>
+          <div class="unit-input"><input type="number" step="any" min="-100" max="100" data-f="skew" title="Channel-to-channel skew, ±100 ns" /><span>ns</span></div>
         </div></div>`;
     container.append(panel);
 
@@ -826,6 +942,23 @@ function buildChannelPanels(): void {
       const ch = state.settings?.channels.find((c) => c.channel === n);
       if (ch) act(() => api.channel(n, { bandwidthLimit: !ch.bandwidthLimit }));
     });
+    field<HTMLButtonElement>("inv").addEventListener("click", (e) => {
+      e.preventDefault();
+      const ch = state.settings?.channels.find((c) => c.channel === n);
+      if (ch) act(() => api.channel(n, { inverted: !ch.inverted }));
+    });
+    field<HTMLButtonElement>("more").addEventListener("click", (e) => {
+      e.preventDefault();
+      const extra = field("extra");
+      extra.hidden = !extra.hidden;
+      field("more").classList.toggle("on", !extra.hidden);
+    });
+    field<HTMLSelectElement>("unit").addEventListener("change", (e) =>
+      act(() => api.channel(n, { unit: (e.target as HTMLSelectElement).value })),
+    );
+    field<HTMLInputElement>("skew").addEventListener("change", (e) =>
+      act(() => api.channel(n, { skew: Number((e.target as HTMLInputElement).value) * 1e-9 })),
+    );
     field<HTMLInputElement>("enabled").addEventListener("change", (e) =>
       act(() => api.channel(n, { enabled: (e.target as HTMLInputElement).checked })),
     );
@@ -842,10 +975,12 @@ function buildChannelPanels(): void {
       act(() => api.channel(n, { probe: Number((e.target as HTMLSelectElement).value) })),
     );
     panel.querySelectorAll<HTMLButtonElement>(".stepper button").forEach((b) =>
-      b.addEventListener("click", () => {
+      b.addEventListener("click", (e) => {
         const ch = state.settings?.channels.find((c) => c.channel === n);
         if (!ch) return;
-        const next = stepValue(voltDivs(ch.probe), ch.voltsPerDiv, Number(b.dataset.dir));
+        const dir = Number(b.dataset.dir);
+        // Shift+click: fine step of about 2 %; the scope rounds to its nearest fine setting.
+        const next = e.shiftKey ? ch.voltsPerDiv * (dir > 0 ? 1.02 : 1 / 1.02) : stepValue(voltDivs(ch.probe), ch.voltsPerDiv, dir);
         if (next !== undefined) act(() => api.channel(n, { voltsPerDiv: next }));
       }),
     );
@@ -859,7 +994,17 @@ function renderChannel(ch: ChannelSettings): void {
   panel.classList.toggle("off", !ch.enabled);
   field<HTMLInputElement>("enabled").checked = ch.enabled;
   field("bwl").classList.toggle("on", ch.bandwidthLimit);
-  fillSelect(field("voltsPerDiv"), voltDivs(ch.probe), (v) => si(v, "V"), ch.voltsPerDiv);
+  field("inv").classList.toggle("on", ch.inverted);
+  setSelect(field("unit"), ch.unit);
+  setInput(field("skew"), ch.skew * 1e9);
+  field("offset-unit").textContent = ch.unit;
+  // Re-format when the unit changes (dataset.key only tracks the values).
+  const vdiv = field<HTMLSelectElement>("voltsPerDiv");
+  if (vdiv.dataset.unit !== ch.unit) {
+    vdiv.dataset.key = "";
+    vdiv.dataset.unit = ch.unit;
+  }
+  fillSelect(vdiv, voltDivs(ch.probe), (v) => si(v, ch.unit), ch.voltsPerDiv);
   setInput(field("offset"), ch.offset);
   const cpl = field<HTMLSelectElement>("coupling");
   if (document.activeElement !== cpl) cpl.value = ch.coupling;
@@ -927,21 +1072,51 @@ document.addEventListener("keydown", (e) => {
 
 const canvas = $<HTMLCanvasElement>("plot");
 let dragging: CursorHit | null = null;
+/** Start x of a zoom drag on an empty part of the plot. */
+let zoomFrom: number | null = null;
 
-function canvasPoint(e: PointerEvent): [number, number] {
+function canvasPoint(e: MouseEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
   return [e.clientX - r.left, e.clientY - r.top];
 }
 
+/** Sets (or clears) the zoom window, keeping it inside the record and above ~20 samples. */
+function setZoom(view: { start: number; span: number } | null): void {
+  const record = plot.recordWindow(state.frame);
+  if (view && record && state.frame) {
+    const minSpan = 20 / state.frame.sampleRate;
+    const span = Math.min(record.span, Math.max(minSpan, view.span));
+    const start = Math.min(record.start + record.span - span, Math.max(record.start, view.start));
+    view = span >= record.span * 0.999 ? null : { start, span };
+  }
+  plot.view = view;
+  plot.clearPersistence();
+  renderZoomInfo();
+  render();
+}
+
+function renderZoomInfo(): void {
+  const record = plot.recordWindow(state.frame);
+  const zoomed = !!(plot.view && record);
+  $("zoom-info").hidden = $("zoom-reset").hidden = !zoomed;
+  if (zoomed) {
+    $("zoom-info").textContent = `Zoom ×${(record!.span / plot.view!.span).toPrecision(3)}  ·  ${si(plot.view!.span / 14, "s")}/div`;
+  }
+}
+
 canvas.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || plot.xy) return;
   const [x, y] = canvasPoint(e);
   dragging = plot.hitCursor(x, y);
-  if (dragging) canvas.setPointerCapture(e.pointerId);
+  if (!dragging && state.frame) zoomFrom = x;
+  canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove", (e) => {
   const [x, y] = canvasPoint(e);
   if (dragging) {
     plot.moveCursor(dragging, x, y);
+  } else if (zoomFrom !== null) {
+    plot.selection = [zoomFrom, x];
   } else {
     const hit = plot.hitCursor(x, y);
     canvas.style.cursor = hit ? (hit.kind === "t" ? "ew-resize" : "ns-resize") : "crosshair";
@@ -949,16 +1124,61 @@ canvas.addEventListener("pointermove", (e) => {
   plot.hoverX = x;
   render();
 });
-canvas.addEventListener("pointerup", () => (dragging = null));
+canvas.addEventListener("pointerup", (e) => {
+  const [x] = canvasPoint(e);
+  if (zoomFrom !== null && Math.abs(x - zoomFrom) > 6) {
+    const t0 = plot.timeAtX(Math.min(zoomFrom, x));
+    const t1 = plot.timeAtX(Math.max(zoomFrom, x));
+    setZoom({ start: t0, span: t1 - t0 });
+  }
+  dragging = null;
+  zoomFrom = null;
+  plot.selection = null;
+  render();
+});
 canvas.addEventListener("pointerleave", () => {
-  if (dragging) return;
+  if (dragging || zoomFrom !== null) return;
   plot.hoverX = null;
   render();
 });
+canvas.addEventListener("dblclick", () => setZoom(null));
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    const record = plot.recordWindow(state.frame);
+    if (!record || plot.xy) return;
+    e.preventDefault();
+    // Zoom around the time under the mouse.
+    const [x] = canvasPoint(e);
+    const t = plot.timeAtX(x);
+    const current = plot.view ?? record;
+    const factor = e.deltaY < 0 ? 1 / 1.25 : 1.25;
+    const span = current.span * factor;
+    setZoom({ start: t - ((t - current.start) / current.span) * span, span });
+  },
+  { passive: false },
+);
+$("zoom-reset").addEventListener("click", () => setZoom(null));
 new ResizeObserver(() => {
   plot.resize();
+  plot.clearPersistence();
   render();
 }).observe($("plot-wrap"));
+
+// ---------- XY and persistence ----------
+
+$("xy-btn").addEventListener("click", () => {
+  plot.xy = !plot.xy;
+  $("xy-btn").classList.toggle("on", plot.xy);
+  if (plot.xy) setZoom(null);
+  plot.clearPersistence();
+  render();
+});
+$<HTMLSelectElement>("persist").addEventListener("change", (e) => {
+  plot.persistence = Number((e.target as HTMLSelectElement).value);
+  plot.clearPersistence();
+  render();
+});
 
 // ---------- export ----------
 

@@ -31,7 +31,7 @@ public sealed class FakeScopeServer : IAsyncDisposable
     private int _frame;
     private Settings _s = Settings.Default;
 
-    private sealed record Channel(bool On, double Vdiv, double Ofst, double Attn, string Cpl = "D1M", bool Bwl = false);
+    private sealed record Channel(bool On, double Vdiv, double Ofst, double Attn, string Cpl = "D1M", bool Bwl = false, bool Inv = false, string Unit = "V", double Skew = 0);
 
     /// <summary>Everything a panel setup (PNSU / *SAV) stores.</summary>
     private sealed record Settings(
@@ -205,6 +205,12 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "CPL?": return Line(prefix + "CPL", c.Cpl);
                 case "ATTN": SetChannel(ch, c with { Attn = double.Parse(arg, CultureInfo.InvariantCulture) }); return null;
                 case "ATTN?": return Line(prefix + "ATTN", c.Attn.ToString(CultureInfo.InvariantCulture));
+                case "INVS": SetChannel(ch, c with { Inv = arg.Equals("ON", StringComparison.OrdinalIgnoreCase) }); return null;
+                case "INVS?": return Line(prefix + "INVS", c.Inv ? "ON" : "OFF");
+                case "UNIT": SetChannel(ch, c with { Unit = arg.ToUpperInvariant() }); return null;
+                case "UNIT?": return Line(prefix + "UNIT", c.Unit);
+                case "SKEW": SetChannel(ch, c with { Skew = Math.Clamp(ParseTime(arg), -100e-9, 100e-9) }); return null;
+                case "SKEW?": return Line(prefix + "SKEW", E(c.Skew) + "S");
                 case "TRSL": _s = _s with { TrigSlope = arg.ToUpperInvariant() }; return null;
                 case "TRSL?": return Line(prefix + "TRSL", _s.TrigSlope);
                 case "TRCP": _s = _s with { TrigCoupling = arg.ToUpperInvariant() }; return null;
@@ -299,7 +305,9 @@ public sealed class FakeScopeServer : IAsyncDisposable
     private sbyte Code(int ch, double t)
     {
         var c = _s.Channels[ch - 1];
-        double v = Signal(ch, t) + (_noise.NextDouble() - 0.5) * 0.02;
+        double v = Signal(ch, t - c.Skew) + (_noise.NextDouble() - 0.5) * 0.02;
+        // Like the real scope, an inverted channel is transferred inverted.
+        if (c.Inv) v = -v;
         return (sbyte)Math.Clamp(Math.Round((v + c.Ofst) * WaveformDecoder.CodesPerDivision / c.Vdiv), -127, 127);
     }
 

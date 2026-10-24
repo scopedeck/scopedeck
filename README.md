@@ -24,6 +24,11 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
   cannot be switched off again remotely); works with cursors, measurements, FFT and CSV export
 - **History**: browse the scope's stored acquisitions frame by frame with timestamps, play them back, export all as CSV
 - **Setups**: save the scope setup to a file and load it back, store/recall the scope's 20 setup memories, default setup
+- Channel extras: invert, unit V/A (current probes), skew ±100 ns, fine V/div steps (Shift+click ‹ ›)
+- **Zoom**: drag across the plot or use the mouse wheel; the zoomed part is read from the scope at up to full
+  resolution (`WFSU FP`). Double-click or *Reset zoom* shows the whole record again
+- **References**: freeze up to four traces (R1–R4) or load a CSV export, shown as overlays with their own measurements
+- **XY mode** (C1 against C2) and **persistence** (0.5 s, 1 s, 5 s or infinite afterglow)
 - **Cursors**: draggable time (X1/X2) and voltage (Y1/Y2) cursors with ΔT, 1/ΔT, ΔV and each channel's value at X1/X2
 - **FFT**: spectrum of any channel in dBV (RMS), Hann / Hamming / Blackman-Harris / flat-top / rectangular window,
   span zoom, peak marker, hover readout. Resolution follows the *Points* setting (20k points → finer RBW, higher Nyquist)
@@ -104,6 +109,9 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   `HT`/`HV`/`HV2` set valid for that type.
 - `PNSU?` returns the setup as XML (~45 KB) on this 2-channel model (the guide says binary). Loading it back works, but
   two `unit_type` fields of display values came back different.
+- `WFSU FP,n` selects the first transferred sample; together with `SP` and `NP` any slice of the record can be read.
+- An inverted channel (`INVS ON`) is also transferred inverted. Switching a channel's unit (`UNIT A`) changed the
+  trigger level (1.50 → 0.77) and switching back did not restore it. `VDIV` accepts fine values (0.37 → 0.368).
 - The math display can be switched on (`MATH:TRA ON`) but not off again (`MATH:TRA OFF` is ignored, `MATH:TRA?` gets no
   answer), which is why ScopeDeck computes math itself.
 - `SCDP` returns an 800×480 RGB565 BMP (top-down, BI_BITFIELDS) followed by one extra `\n` byte.

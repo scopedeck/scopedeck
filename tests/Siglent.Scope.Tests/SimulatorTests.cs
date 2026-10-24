@@ -38,8 +38,35 @@ public sealed class SimulatorTests : IAsyncLifetime
 
         Assert.Equal(500e-6, s.TimePerDiv, 1e-12);
         Assert.Equal(-1e-4, s.TriggerDelay, 1e-12);
-        Assert.Equal(new ChannelSettings(2, true, 0.5, -1, "A1M", 1, false), s.Channels[1]);
+        Assert.Equal(new ChannelSettings(2, true, 0.5, -1, "A1M", 1, false, false, "V", 0), s.Channels[1]);
         Assert.Equal(new TriggerSettings("NORM", "EDGE", "C2", "NEG", 1.65, "DC", "OFF", null, null, null), s.Trigger);
+    }
+
+    [Fact]
+    public async Task SetsInvertUnitAndSkew()
+    {
+        await _scope.UpdateChannelAsync(1, new ChannelUpdate(Inverted: true, Unit: "a", Skew: 12.5e-9));
+
+        var c1 = (await _scope.GetSettingsAsync()).Channels[0];
+
+        Assert.Equal((true, "A"), (c1.Inverted, c1.Unit));
+        Assert.Equal(12.5e-9, c1.Skew, 1e-15);
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdateChannelAsync(1, new ChannelUpdate(Skew: 150e-9)));
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdateChannelAsync(1, new ChannelUpdate(Unit: "W")));
+    }
+
+    [Fact]
+    public async Task ZoomedFrameIsAFullResolutionSlice()
+    {
+        var full = await _scope.GetFrameAsync(maxPoints: 2000);
+        // The middle 1 % of the record: 7000 of 700 000 samples, read without decimation.
+        var zoom = await _scope.GetFrameAsync(maxPoints: 10_000, start: 0.495, end: 0.505);
+
+        var c1 = zoom.Channels[0];
+        Assert.Equal(7000, c1.Volts.Length);
+        Assert.Equal(1 / zoom.SampleRate, c1.SampleInterval, 1e-15);
+        Assert.Equal(full.Channels[0].FirstPointTime + 0.495 * 700_000 / zoom.SampleRate, c1.FirstPointTime, 1e-12);
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.GetFrameAsync(start: 0.6, end: 0.4));
     }
 
     [Fact]

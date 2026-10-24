@@ -23,7 +23,10 @@ public sealed record ChannelSettings(
     double Offset,
     string Coupling,
     double Probe,
-    bool BandwidthLimit);
+    bool BandwidthLimit,
+    bool Inverted,
+    string Unit,
+    double Skew);
 
 /// <param name="Type">EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout) or TV.</param>
 /// <param name="HoldType">Condition: OFF/TI (edge holdoff, dropout time), PS/PL/P2/P1 (pulse, runt), IS/IL/I2/I1 (slope, interval).</param>
@@ -85,7 +88,10 @@ public sealed record ChannelUpdate(
     double? Offset = null,
     string? Coupling = null,
     double? Probe = null,
-    bool? BandwidthLimit = null);
+    bool? BandwidthLimit = null,
+    bool? Inverted = null,
+    string? Unit = null,
+    double? Skew = null);
 
 /// <param name="TriggerDelay">Screen-center time relative to the trigger, as shown on the scope ("Delay").</param>
 public sealed record TimebaseUpdate(double? TimePerDiv = null, double? TriggerDelay = null);

@@ -14,6 +14,13 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **History mode** — browse, play back and export the stored acquisitions (`HSMD`, `FRAM`, `FTIM?`).
 - **Setups** — save/load setup files (`PNSU`), scope memories 1–20 (`*SAV`, `*RCL`), default setup (`*RCL 0`).
 
+## Done in RC 3
+
+- **Channel extras** — invert (`INVS`), unit V/A (`UNIT`), skew (`SKEW`), fine V/div steps (Shift+click).
+- **Zoom** — drag or mouse wheel on the plot; the visible part is read at up to full resolution (`WFSU FP`).
+- **References** — R1–R4 frozen from a trace or loaded from a CSV export (app-side).
+- **XY mode and persistence** — drawn in the app.
+
 ## Next
 
 - **Video trigger** (`TRSE TV` with standard, sync, line, field) — currently shown but has to be set up on the scope.
@@ -21,13 +28,14 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 
 ## Later
 
-- **Channel extras** — invert (`INVS`), unit V/A for current probes (`UNIT`), skew (`SKEW`), fine V/div steps.
-- **Reference waveforms** — on the scope (`REFS`, `REFSA`, `REFDS`) and/or app-side overlays from saved CSVs.
+
 - **Pass/Fail mask testing** — create a mask, count pass/fail, stop on fail (`PF*`).
 - **Serial triggers** — I²C, SPI, UART, CAN, LIN with address/ID/data qualifiers (`TRIIC:*`, `TRSPI:*`,
   `TRUART:*`, `TRCAN:*`, `TRLIN:*`).
 - **Measurement gates and inter-channel delay** (`MEGA`, `MEGB`, `MEGS`, `MEAD`) for the "Scope" measurement source.
-- **Display** — persistence and XY mode drawn in the app (scope-side: `PESU`, `XYDS`).
+- **Virtual front panel** — press the scope's keys from the app via the undocumented `$$SY_FP <key>,1` (as
+  klumw/sdsremote does); would also allow switching the scope's math display off.
+- **Macro recorder** — record and replay SCPI sequences for repeatable test procedures.
 - **Native desktop windows on macOS and Linux** — swap WinForms/WebView2 for Photino.NET (WebKit on macOS/Linux).
 
 ## Low priority / limited
@@ -36,6 +44,6 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
   results; they are only visible on the scope screen (screenshot). App-side decoding would be a separate project.
 - **Built-in counter** (`CYMT?`, `COUN`) — measurements already cover frequency.
 - **Scope-side FFT and cursors** (`FFT*`, `CRST`, `CRVA?`) — the app has its own, more flexible versions.
-- **Zoom window** (`HMAG`, `HPOS`) — better done app-side on the transferred data.
+- **Scope-side zoom window** (`HMAG`, `HPOS`) — ScopeDeck zooms itself, at full resolution.
 - **Function generator** (`WGEN`, `ARWV`) — only with the SAG1021 USB module.
 - **Housekeeping** — date/time, buzzer, network settings, self-calibration (`DATE`, `BUZZ`, `CONET`, `*CAL?`).
