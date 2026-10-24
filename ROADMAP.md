@@ -39,6 +39,10 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **Active channel** — clicking a channel's name presses the scope's channel button (select, then off).
 - **Virtual front panel** — the scope's screen with soft keys, buttons and knobs (`$$SY_FP`, not in the guide).
 
+## Done in RC 8
+
+- **Channel buttons** — the channel-name links press the scope's own CH1/CH2 key; the selected channel is drawn behind the others, as on the scope.
+
 ## Later
 
 - **Pass/Fail mask testing** — create a mask, count pass/fail, stop on fail (`PF*`).
