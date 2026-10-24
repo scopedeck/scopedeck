@@ -100,6 +100,13 @@ export type TriggerUpdate = Partial<Omit<TriggerSettings, "level" | "holdValue" 
 };
 export type AcquisitionUpdate = Partial<AcquisitionSettings>;
 
+/** phase: idle, starting, downloading, verifying, installing, restarting or failed. */
+export interface UpdateProgress {
+  phase: string;
+  percent: number;
+  error: string | null;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -131,7 +138,14 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 export const api = {
   status: () => request<Status>("GET", "/api/status"),
   /** Result of the server's once-per-run check for a newer GitHub release. */
-  update: () => request<{ current: string; latest: string | null; url: string | null; available: boolean }>("GET", "/api/update"),
+  update: () =>
+    request<{ current: string; latest: string | null; url: string | null; available: boolean; canInstall: boolean; whyNot: string | null }>(
+      "GET",
+      "/api/update",
+    ),
+  /** Starts downloading and installing the update (Windows desktop app only). */
+  installUpdate: () => request<UpdateProgress>("POST", "/api/update/install"),
+  updateProgress: () => request<UpdateProgress>("GET", "/api/update/progress"),
   connect: (host: string) => request<ScopeIdentity>("POST", "/api/connect", { host }),
   disconnect: () => request<void>("POST", "/api/disconnect"),
   settings: () => request<ScopeSettings>("GET", "/api/settings"),

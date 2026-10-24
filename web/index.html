@@ -267,6 +267,21 @@
       </div>
     </dialog>
 
+    <dialog id="update-dialog" class="small-dialog">
+      <h3>Update available</h3>
+      <p id="update-text"></p>
+      <div id="update-progress" class="update-progress" hidden>
+        <progress id="update-bar" max="100" value="0"></progress>
+        <span id="update-phase" class="muted"></span>
+      </div>
+      <p id="update-note" class="muted" hidden></p>
+      <div class="dialog-actions">
+        <a id="update-notes" class="link-btn" target="_blank" rel="noopener">Release notes</a>
+        <button id="update-now" class="primary">Update now</button>
+        <button id="update-later">Later</button>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

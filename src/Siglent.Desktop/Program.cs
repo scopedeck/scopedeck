@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -13,8 +14,24 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        var exePath = Environment.ProcessPath!;
+        UpdateInstaller.CleanUp(exePath);
+
+        // Set by an installed update: the exe to start once this instance has shut down.
+        string? restartInto = null;
+        MainForm? form = null;
+        var host = new DesktopHost(exePath, path =>
+        {
+            restartInto = path;
+            form?.BeginInvoke(form.Close);
+        });
+
         // The web server runs inside this process on a free loopback port, private to this window.
-        var app = SiglentServer.Build(args, builder => builder.WebHost.UseUrls("http://127.0.0.1:0"));
+        var app = SiglentServer.Build(args, builder =>
+        {
+            builder.WebHost.UseUrls("http://127.0.0.1:0");
+            builder.Services.AddSingleton(host);
+        });
         try
         {
             app.StartAsync().GetAwaiter().GetResult();
@@ -26,10 +43,14 @@ internal static class Program
         }
 
         var url = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
-        Application.Run(new MainForm(new Uri(url)));
+        form = new MainForm(new Uri(url));
+        Application.Run(form);
 
-        // Disposes the scope connection so the next session (or EasyScopeX) can connect.
+        // Disposes the scope connection so the next session (or EasyScopeX, or the updated version) can connect.
         app.StopAsync().GetAwaiter().GetResult();
         app.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        if (restartInto is not null)
+            Process.Start(new ProcessStartInfo(restartInto) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(restartInto) });
     }
 }

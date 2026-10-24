@@ -1275,6 +1275,44 @@ $("console-form").addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- self-update (Windows desktop app) ----------
+
+const UPDATE_PHASES: Record<string, string> = {
+  starting: "Starting…",
+  downloading: "Downloading",
+  verifying: "Checking the download…",
+  installing: "Installing…",
+  restarting: "Restarting ScopeDeck…",
+};
+
+$("update-later").addEventListener("click", () => $<HTMLDialogElement>("update-dialog").close());
+$("update-now").addEventListener("click", async () => {
+  const button = $<HTMLButtonElement>("update-now");
+  button.disabled = true;
+  $("update-later").hidden = true;
+  $("update-note").hidden = true;
+  $("update-progress").hidden = false;
+  try {
+    let p = await api.installUpdate();
+    // The window closes by itself when the new version starts.
+    while (p.phase !== "failed") {
+      const label = UPDATE_PHASES[p.phase] ?? p.phase;
+      $("update-phase").textContent = p.phase === "downloading" ? `${label} ${p.percent} %` : label;
+      $<HTMLProgressElement>("update-bar").value = p.phase === "downloading" ? p.percent : 100;
+      if (p.phase === "restarting") return;
+      await sleep(300);
+      p = await api.updateProgress();
+    }
+    throw new Error(p.error ?? "The update failed.");
+  } catch (e) {
+    $("update-progress").hidden = true;
+    $("update-note").hidden = false;
+    $("update-note").textContent = `${e instanceof Error ? e.message : String(e)} Nothing was changed; you can try again or update manually.`;
+    button.disabled = false;
+    $("update-later").hidden = false;
+  }
+});
+
 // ---------- startup ----------
 
 (async () => {
@@ -1289,8 +1327,17 @@ $("console-form").addEventListener("submit", async (e) => {
       const badge = $<HTMLAnchorElement>("update-badge");
       badge.href = u.url;
       badge.textContent = `Update available: v${u.latest}`;
-      badge.title = `ScopeDeck v${u.latest} is available (you have v${u.current}). Click to open the release page.`;
+      badge.title = `ScopeDeck v${u.latest} is available (you have v${u.current}).`;
       badge.hidden = false;
+      badge.addEventListener("click", (e) => {
+        e.preventDefault();
+        $("update-text").textContent = `ScopeDeck v${u.latest} is available. You have v${u.current}.`;
+        $<HTMLAnchorElement>("update-notes").href = u.url!;
+        $("update-now").hidden = !u.canInstall;
+        $("update-note").hidden = u.canInstall;
+        $("update-note").textContent = u.whyNot ?? "";
+        $<HTMLDialogElement>("update-dialog").showModal();
+      });
     }, () => {});
     $<HTMLInputElement>("host").value = status.host;
     if (status.connected && status.identity) await onConnected(status.identity.model, status.identity.firmware);

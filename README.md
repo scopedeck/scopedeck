@@ -71,6 +71,10 @@ dotnet publish src/Siglent.Server -c Release -r linux-x64 -p:PublishSingleFile=t
 **Update check:** on start, ScopeDeck asks GitHub once whether a newer release exists and shows an *Update available*
 badge next to the version (pre-release builds are offered newer pre-releases too). Only the request itself is sent.
 Switch it off with `"UpdateCheck": { "Enabled": false }` in `appsettings.json`; builds from source (`-dev`) never check.
+In the Windows desktop app, clicking the badge offers **Update now**: the matching zip is downloaded, checked against
+the SHA-256 checksum GitHub publishes, and installed over the running app (the running exe is renamed to `.old` and
+removed on the next start; on any error it is put back). Your `appsettings.json` is kept. The folder must be writable
+(not Program Files); otherwise the dialog links to the release page.
 
 The server listens on localhost only. To use the app from another device, start it with
 `--urls http://0.0.0.0:5180` (anyone on your network can then control the scope).

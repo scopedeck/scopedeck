@@ -4,7 +4,12 @@ using System.Text.Json.Serialization;
 
 namespace Siglent.Server;
 
-public sealed record UpdateInfo(string Current, string? Latest, string? Url, bool Available);
+public sealed record UpdateInfo(string Current, string? Latest, string? Url, bool Available)
+{
+    /// <summary>Files of the newer release (not sent to the UI).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<UpdateChecker.Asset> Assets { get; init; } = [];
+}
 
 /// <summary>
 /// Asks GitHub once per run whether a newer release exists. Pre-release builds are offered newer pre-releases
@@ -34,7 +39,7 @@ public sealed class UpdateChecker(IConfiguration config, ILogger<UpdateChecker> 
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             var releases = await http.GetFromJsonAsync<Release[]>(ReleasesUrl) ?? [];
             return Pick(CurrentVersion, releases) is { } newest
-                ? new UpdateInfo(CurrentVersion, newest.TagName.TrimStart('v'), newest.HtmlUrl, true)
+                ? new UpdateInfo(CurrentVersion, newest.TagName.TrimStart('v'), newest.HtmlUrl, true) { Assets = newest.Assets ?? [] }
                 : none;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
@@ -59,7 +64,15 @@ public sealed class UpdateChecker(IConfiguration config, ILogger<UpdateChecker> 
         [property: JsonPropertyName("tag_name")] string TagName,
         [property: JsonPropertyName("html_url")] string HtmlUrl,
         [property: JsonPropertyName("prerelease")] bool Prerelease,
-        [property: JsonPropertyName("draft")] bool Draft);
+        [property: JsonPropertyName("draft")] bool Draft,
+        [property: JsonPropertyName("assets")] Asset[]? Assets = null);
+
+    /// <param name="Digest">"sha256:…", published by GitHub for each release file.</param>
+    public sealed record Asset(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("browser_download_url")] string Url,
+        [property: JsonPropertyName("size")] long Size,
+        [property: JsonPropertyName("digest")] string? Digest);
 }
 
 /// <summary>Semantic version ordering: 0.1.0-rc.2 &lt; 0.1.0-rc.10 &lt; 0.1.0 &lt; 0.1.1.</summary>

@@ -21,6 +21,7 @@ public static class SiglentServer
         builder.Services.AddSingleton<ScopeService>();
         builder.Services.AddSingleton<UserSettings>();
         builder.Services.AddSingleton<UpdateChecker>();
+        builder.Services.AddSingleton<UpdateInstaller>();
         builder.Services.AddProblemDetails();
         configure?.Invoke(builder);
 
@@ -68,7 +69,14 @@ public static class SiglentServer
             }
         });
 
-        api.MapGet("/update", (UpdateChecker updates) => updates.GetAsync());
+        api.MapGet("/update", async (UpdateChecker updates, UpdateInstaller installer) =>
+        {
+            var info = await updates.GetAsync();
+            var whyNot = installer.WhyNot(info);
+            return new { info.Current, info.Latest, info.Url, info.Available, CanInstall = whyNot is null, WhyNot = whyNot };
+        });
+        api.MapPost("/update/install", (UpdateInstaller installer) => installer.Start());
+        api.MapGet("/update/progress", (UpdateInstaller installer) => installer.Progress);
 
         api.MapGet("/status", (ScopeService scope, UserSettings settings) => new
         {

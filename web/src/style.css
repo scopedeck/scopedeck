@@ -438,3 +438,8 @@ button.danger-outline { border-color: color-mix(in srgb, var(--danger) 60%, var(
   text-decoration: none;
 }
 .update-badge:hover { filter: brightness(1.15); }
+.update-progress { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.update-progress progress { flex: 1; accent-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+a.link-btn { margin-right: auto; align-self: center; font-size: 13px; color: var(--accent); }
+.dialog-actions { align-items: center; }
