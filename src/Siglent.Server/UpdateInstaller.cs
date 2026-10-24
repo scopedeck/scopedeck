@@ -20,7 +20,7 @@ public sealed record UpdateProgress(string Phase, int Percent, string? Error);
 public sealed class UpdateInstaller(UpdateChecker checker, ILogger<UpdateInstaller> logger, DesktopHost? host = null)
 {
     private static readonly string WorkDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScopeDeck", "update");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), "ScopeDeck", "update");
 
     private readonly Lock _lock = new();
     private UpdateProgress _progress = new("idle", 0, null);

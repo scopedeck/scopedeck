@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
+import { saveBlob, saveUrl, type Saved } from "./files";
 import { describeStep, MAX_RECORDED_DELAY_MS, recordable, validSteps } from "./macro";
 import { buildMask } from "./mask";
 import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
@@ -873,10 +874,7 @@ $("hist-play").addEventListener("click", async () => {
 });
 $("hist-export").addEventListener("click", () => {
   toast("Reading every history frame… the CSV download starts when all frames are read.", "info");
-  const a = document.createElement("a");
-  a.href = api.historyExportUrl(Number($<HTMLSelectElement>("points").value));
-  a.download = "";
-  a.click();
+  downloadUrl(api.historyExportUrl(Number($<HTMLSelectElement>("points").value)));
 });
 
 // ---------- save / load menu ----------
@@ -889,10 +887,7 @@ document.addEventListener("click", (e) => {
 
 $("setup-save-btn").addEventListener("click", () => {
   if (!state.connected) return toast("Not connected.", "info");
-  const a = document.createElement("a");
-  a.href = api.setupUrl;
-  a.download = "";
-  a.click();
+  downloadUrl(api.setupUrl);
 });
 $("setup-load-btn").addEventListener("click", () => {
   if (!state.connected) return toast("Not connected.", "info");
@@ -985,10 +980,7 @@ $("log-btn").addEventListener("click", () => {
 $("capture-btn").addEventListener("click", () => {
   if (!state.connected) return toast("Not connected.", "info");
   toast("Reading the full acquisition memory… the CSV download starts when the transfer is done.", "info");
-  const a = document.createElement("a");
-  a.href = api.captureUrl;
-  a.download = "";
-  a.click();
+  downloadUrl(api.captureUrl);
 });
 
 function renderSettings(): void {
@@ -1521,12 +1513,16 @@ $<HTMLSelectElement>("persist").addEventListener("change", (e) => {
 
 const stamp = () => new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
 
+function saved(path: Saved): void {
+  if (path) toast(`Saved ${path}`, "info");
+}
+
 function download(blob: Blob, name: string): void {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  saveBlob(blob, name).then(saved, handleError);
+}
+
+function downloadUrl(url: string): void {
+  saveUrl(url).then(saved, handleError);
 }
 
 $("csv-btn").addEventListener("click", () => {
@@ -1569,11 +1565,8 @@ $("screenshot-btn").addEventListener("click", async () => {
     btn.disabled = false;
   }
 });
-$("shot-save").addEventListener("click", () => {
-  const a = document.createElement("a");
-  a.href = shotUrl;
-  a.download = `screen-${stamp()}.png`;
-  a.click();
+$("shot-save").addEventListener("click", async () => {
+  download(await (await fetch(shotUrl)).blob(), `screen-${stamp()}.png`);
 });
 $("shot-close").addEventListener("click", () => $<HTMLDialogElement>("shot-dialog").close());
 

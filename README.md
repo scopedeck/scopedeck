@@ -5,7 +5,7 @@
 
 A modern replacement for EasyScopeX for Siglent SDS1000X-E oscilloscopes (developed against an
 SDS1202X-E, firmware 1.3.27). A .NET 10 backend talks to the scope; a TypeScript UI shows it — in its own
-Windows window (`ScopeDeck.exe`) or in any browser.
+window on Windows, macOS and Linux, or in any browser.
 
 No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a TCP socket on port 5025.
 
@@ -53,8 +53,20 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 
 ## Running
 
-**Prebuilt:** download from [Releases](https://github.com/scopedeck/scopedeck/releases) — the Windows desktop app
-(`…-windows-x64-standalone.zip` needs nothing else installed) or the server + browser UI for Linux/macOS/Windows.
+**Prebuilt:** download from [Releases](https://github.com/scopedeck/scopedeck/releases) — the desktop app for Windows
+(`…-windows-x64-standalone.zip` needs nothing else installed), macOS (`…-macos-arm64.zip` for Apple silicon,
+`…-macos-x64.zip` for Intel) or Linux (`…-linux-x64.tar.gz`, `…-linux-arm64.tar.gz`), or the server + browser UI for
+any of them.
+
+**macOS:** unzip and move `ScopeDeck.app` to Applications. The app is not notarized (that needs a paid Apple
+developer account), so the first start is refused: open *System Settings → Privacy & Security* and click
+*Open Anyway* (or run `xattr -dr com.apple.quarantine /Applications/ScopeDeck.app`). Allow local network access when
+asked.
+
+**Linux:** needs WebKitGTK 4.1 (`sudo apt install libwebkit2gtk-4.1-0` on Debian 12 / Ubuntu 22.04 and later,
+`webkit2gtk4.1` on Fedora). Unpack and run `ScopeDeck/ScopeDeck`.
+
+On macOS and Linux, exported files (CSV, PNG, setups, macros) go to the Downloads folder; the app shows where.
 
 **Windows desktop app from source:** run `.\publish.ps1`, then start `dist\ScopeDeck.exe`. It needs the .NET 10 runtime
 (use `.\publish.ps1 -SelfContained` for a ~100 MB exe that does not).
@@ -73,7 +85,11 @@ dotnet run --project src/Siglent.Server -- --simulate true   # with the fake sco
 Building the server also builds the UI (`web/`, needs Node.js 20+); pass `-p:SkipWebBuild=true` to skip it.
 UI development with hot reload: run the server, then `cd web; npm run dev` and open the Vite URL.
 
-**Linux / macOS:** everything except the desktop window is cross-platform. Run the server as above, or publish it:
+**macOS / Linux desktop app from source:** `dotnet run --project src/Siglent.Photino` (it also runs on Windows).
+`src/Siglent.Photino/package.sh <rid> <version> <folder>` builds the release packages (the macOS app must be built on
+a Mac, where it is signed).
+
+**Server only:** publish it for any platform:
 
 ```bash
 dotnet publish src/Siglent.Server -c Release -r linux-x64 -p:PublishSingleFile=true -o out   # or osx-arm64, osx-x64, linux-arm64
@@ -86,7 +102,7 @@ Switch it off with `"UpdateCheck": { "Enabled": false }` in `appsettings.json`; 
 In the Windows desktop app, clicking the badge offers **Update now**: the matching zip is downloaded, checked against
 the SHA-256 checksum GitHub publishes, and installed over the running app (the running exe is renamed to `.old` and
 removed on the next start; on any error it is put back). Your `appsettings.json` is kept. The folder must be writable
-(not Program Files); otherwise the dialog links to the release page.
+(not Program Files); otherwise the dialog links to the release page, as it always does on macOS and Linux.
 
 The server listens on localhost only. To use the app from another device, start it with
 `--urls http://0.0.0.0:5180` (anyone on your network can then control the scope).
@@ -100,6 +116,7 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 | `src/Siglent.Scope` | SCPI-over-TCP client (`ScpiConnection`), typed scope API (`SiglentScope`), value parsing, waveform decoding |
 | `src/Siglent.Server` | ASP.NET Core minimal API (`/api/...`); the built UI is embedded in the assembly |
 | `src/Siglent.Desktop` | Windows app: WinForms window with WebView2, hosting the server in-process on a free port |
+| `src/Siglent.Photino` | macOS/Linux app: the same in a [Photino](https://www.tryphotino.io/) window (WebKit) |
 | `src/Siglent.Simulator` | `FakeScopeServer`, an SCPI-speaking fake SDS1202X-E |
 | `web` | Vite + TypeScript UI (no framework) |
 | `tests/Siglent.Scope.Tests` | xUnit tests |
@@ -165,6 +182,10 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   no answer within 1.5 s.
 - After the scope has **stopped on a failed waveform**, the next `TRMD AUTO` switches Average to Normal (after a plain
   Stop it does not); ScopeDeck puts the acquisition mode back when you resume.
+- **Serial triggers do not work remotely on FW 1.3.27.** `TRSE SERIAL` selects the serial trigger, but none of the
+  guide's `TRIIC:*`, `TRSPI:*`, `TRUART:*`, `TRCAN:*` or `TRLIN:*` queries is answered and the commands are ignored
+  (checked on the scope's menus). The only effect found: `TRIIC <anything>,<source>,<threshold>` sets the I²C SCL
+  source and threshold. Serial triggers have to be set on the scope (or with the virtual front panel).
 
 ## Related projects
 

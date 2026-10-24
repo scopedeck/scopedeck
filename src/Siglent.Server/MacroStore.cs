@@ -20,7 +20,7 @@ public sealed partial class MacroStore(ILogger<MacroStore> logger, string? fileP
     public const int MaxWaitMs = 3_600_000;
 
     private readonly string _filePath = filePath ?? Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScopeDeck", "macros.json");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), "ScopeDeck", "macros.json");
 
     private readonly Lock _lock = new();
     private List<Macro>? _macros;

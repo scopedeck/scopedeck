@@ -10,7 +10,7 @@ namespace Siglent.Server;
 public sealed class UserSettings(ILogger<UserSettings> logger)
 {
     private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScopeDeck", "settings.json");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), "ScopeDeck", "settings.json");
 
     private readonly Lock _lock = new();
     private Data? _data;

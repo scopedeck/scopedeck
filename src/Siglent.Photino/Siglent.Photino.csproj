@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The desktop app for macOS and Linux: the same UI in the system web view (WebKit) via Photino.
+       It also runs on Windows (WebView2), which is handy for development; Windows releases use Siglent.Desktop. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Siglent.Server\Siglent.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ScopeDeck</AssemblyName>
+    <RootNamespace>Siglent.Photino</RootNamespace>
+    <ApplicationIcon>..\Siglent.Desktop\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="app.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <AllowedReferenceRelatedFileExtensions>-</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <Target Name="TrimPublishFolder" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)scopedeck-server.deps.json;$(PublishDir)scopedeck-server.runtimeconfig.json;$(PublishDir)appsettings.Development.json" />
+  </Target>
+
+</Project>

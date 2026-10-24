@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Siglent.Desktop/Siglent.Desktop.csproj" />
+    <Project Path="src/Siglent.Photino/Siglent.Photino.csproj" />
     <Project Path="src/Siglent.Scope/Siglent.Scope.csproj" />
     <Project Path="src/Siglent.Server/Siglent.Server.csproj" />
     <Project Path="src/Siglent.Simulator/Siglent.Simulator.csproj" />

@@ -2,16 +2,22 @@ name: Release
 
 # Push a tag like v0.1.0 or v0.1.0-rc.1 to build, test and publish a GitHub Release.
 # Tags with a suffix (-rc.1, -beta…) are published as pre-releases.
+# Each platform is built on its own OS: macOS apps must be signed on macOS, and Linux/macOS archives keep the
+# executable bit only when made there. Run it by hand (workflow_dispatch) to build the packages without publishing.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -24,18 +30,20 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Version from tag
-        shell: pwsh
+        shell: bash
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          "VERSION=$version" >> $env:GITHUB_ENV
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v=${GITHUB_REF_NAME#v}; else v=0.0.0-test; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
 
       - run: npm ci
         working-directory: web
 
       - name: Test
+        if: runner.os == 'Windows'
         run: dotnet test -c Release -p:Version=${{ env.VERSION }}
 
-      - name: Build packages
+      - name: Windows packages
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $v = $env:VERSION
@@ -47,39 +55,69 @@ jobs:
           Compress-Archive -Path out/win/* -DestinationPath "assets/ScopeDeck-$v-windows-x64.zip"
           Compress-Archive -Path out/win-sc/* -DestinationPath "assets/ScopeDeck-$v-windows-x64-standalone.zip"
 
-          # Server + browser UI for every platform (self-contained single file).
-          foreach ($rid in "linux-x64", "linux-arm64", "osx-arm64", "osx-x64", "win-x64") {
-            $dir = "out/server-$rid"
-            dotnet publish src/Siglent.Server -c Release -r $rid -p:Version=$v -o $dir --self-contained true `
+          # Server + browser UI (self-contained single file).
+          $dir = "out/server-win-x64"
+          dotnet publish src/Siglent.Server -c Release -r win-x64 -p:Version=$v -o $dir --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none
+          Remove-Item "$dir/*.pdb", "$dir/appsettings.Development.json", "$dir/*.staticwebassets.*" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$dir/*" -DestinationPath "assets/ScopeDeck-server-$v-win-x64.zip"
+
+      - name: Linux and macOS packages
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          v=$VERSION
+          mkdir -p out assets
+          if [ "$RUNNER_OS" = Linux ]; then rids="linux-x64 linux-arm64"; else rids="osx-arm64 osx-x64"; fi
+          for rid in $rids; do
+            # Desktop app (Photino: the system web view in a native window).
+            bash src/Siglent.Photino/package.sh "$rid" "$v" assets
+
+            # Server + browser UI (self-contained single file).
+            dir="out/server-$rid"
+            dotnet publish src/Siglent.Server -c Release -r "$rid" -p:Version="$v" -o "$dir" --self-contained true \
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none
-            Remove-Item "$dir/*.pdb", "$dir/appsettings.Development.json", "$dir/*.staticwebassets.*" -ErrorAction SilentlyContinue
-            if ($rid -like "win-*") {
-              Compress-Archive -Path "$dir/*" -DestinationPath "assets/ScopeDeck-server-$v-$rid.zip"
-            } else {
-              # tar keeps the executable bit for Linux/macOS.
-              tar -czf "assets/ScopeDeck-server-$v-$rid.tar.gz" -C $dir .
-            }
-          }
-          Get-ChildItem assets | Format-Table Name, Length
+            rm -f "$dir"/*.pdb "$dir/appsettings.Development.json" "$dir"/*.staticwebassets.*
+            tar -czf "assets/ScopeDeck-server-$v-$rid.tar.gz" -C "$dir" .
+          done
+
+      - run: ls -l assets
+        shell: bash
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: assets-${{ runner.os }}
+          path: assets/*
+
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
 
       - name: Publish release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          $notes = @"
+          v=${GITHUB_REF_NAME#v}
+          cat > notes.md <<EOF
           ## Downloads
 
           | File | For |
           | --- | --- |
-          | ``ScopeDeck-$env:VERSION-windows-x64.zip`` | Windows desktop app. Needs the [.NET 10 Desktop Runtime and ASP.NET Core Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). |
-          | ``ScopeDeck-$env:VERSION-windows-x64-standalone.zip`` | Windows desktop app, no .NET installation needed (larger). |
-          | ``ScopeDeck-server-$env:VERSION-<platform>`` | Server + browser UI for Linux, macOS and Windows; no .NET needed. Run it and open http://localhost:5180. |
+          | \`ScopeDeck-$v-windows-x64.zip\` | Windows desktop app. Needs the [.NET 10 Desktop Runtime and ASP.NET Core Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). |
+          | \`ScopeDeck-$v-windows-x64-standalone.zip\` | Windows desktop app, no .NET installation needed (larger). |
+          | \`ScopeDeck-$v-macos-arm64.zip\` / \`-macos-x64.zip\` | macOS desktop app (Apple silicon / Intel). Not notarized: the first start needs *Open Anyway*, see the README. |
+          | \`ScopeDeck-$v-linux-x64.tar.gz\` / \`-linux-arm64.tar.gz\` | Linux desktop app. Needs WebKitGTK (\`libwebkit2gtk-4.1-0\`). |
+          | \`ScopeDeck-server-$v-<platform>\` | Server + browser UI for Linux, macOS and Windows; no .NET needed. Run it and open http://localhost:5180. |
 
-          See the [README](https://github.com/${{ github.repository }}#readme) for details.
-          "@
-          $tag = "${{ github.ref_name }}"
-          $ghArgs = @("release", "create", $tag) + (Get-ChildItem assets).FullName +
-                    @("--title", "ScopeDeck $tag", "--notes", $notes, "--generate-notes")
-          if ($tag -match "-") { $ghArgs += "--prerelease" }
-          gh @ghArgs
+          See the [README](https://github.com/$GH_REPO#readme) for details.
+          EOF
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" assets/* --title "ScopeDeck $GITHUB_REF_NAME" --notes-file notes.md --generate-notes $flags

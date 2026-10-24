@@ -53,13 +53,15 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **Macro recorder** — record settings, front-panel keys and SCPI commands with pauses; replay, save, export/import.
 - **Reliable commands** — pauses after settings (longer after relay switching) and resending dropped queries.
 
-## Later
+## Done in RC 11
 
-- **Serial triggers** — I²C, SPI, UART, CAN, LIN with address/ID/data qualifiers (`TRIIC:*`, `TRSPI:*`,
-  `TRUART:*`, `TRCAN:*`, `TRLIN:*`).
-- **Native desktop windows on macOS and Linux** — swap WinForms/WebView2 for Photino.NET (WebKit on macOS/Linux).
+- **Desktop app for macOS and Linux** — the UI in a native window (Photino.NET with the system's WebKit), as an
+  ad-hoc signed `.app` for macOS (Apple silicon and Intel) and a folder for Linux (x64, arm64); exports go to Downloads.
 
 ## Low priority / limited
+
+- **Serial triggers** (`TRSE SERIAL`, `TRIIC:*`, `TRSPI:*`, `TRUART:*`, `TRCAN:*`, `TRLIN:*`) — FW 1.3.27 ignores the
+  documented commands and answers none of the queries (see README); they can only be set with the front panel.
 
 - **Serial decode** — can be configured remotely (`DCST`, `B<n>:DC*`), but there is no command to read decoded
   results; they are only visible on the scope screen (screenshot). App-side decoding would be a separate project.
