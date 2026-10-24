@@ -34,7 +34,7 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **Measurement gate and inter-channel delay** — measurements between cursors X1–X2 (app-side, and the scope's
   `MEGS`/`MEGA`/`MEGB`), delay and phase between channels (rising edges; `MEAD? PHA`/`FRR` for the scope source).
 
-## Done for the next release
+## Done in RC 7
 
 - **Active channel** — clicking a channel's name cycles on → to front → off, like the scope's channel buttons.
 - **Virtual front panel** — the scope's screen with soft keys, buttons and knobs (`$$SY_FP`, not in the guide).
