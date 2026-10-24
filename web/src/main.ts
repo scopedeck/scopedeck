@@ -40,6 +40,8 @@ const state = {
   log: null as string[] | null,
   math: null as MathSettings | null,
   historyPlaying: false,
+  /** The selected channel: drawn on top and highlighted, like the active channel on the scope. */
+  activeChannel: 1,
 };
 
 const refs = new References();
@@ -865,6 +867,7 @@ function renderSettings(): void {
   });
   renderAcquisition(s);
   renderTrigger(s.trigger);
+  syncActiveChannel(s.channels);
   for (const ch of s.channels) renderChannel(ch);
   renderHistory(s.history);
 }
@@ -1057,7 +1060,8 @@ function buildChannelPanels(): void {
     panel.id = `ch${n}`;
     panel.style.setProperty("--ch", channelColor(n));
     panel.innerHTML = `
-      <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label> Channel ${n}
+      <h2><label class="switch"><input type="checkbox" data-f="enabled" /><span></span></label>
+        <button class="ch-name" data-f="name" title="Like the scope's channel button: on → to front → off">Channel ${n}</button>
         <button class="flag-btn bw-btn" data-f="bwl" title="20 MHz bandwidth limit">20M</button>
         <button class="flag-btn" data-f="inv" title="Invert the channel">INV</button>
         <button class="flag-btn" data-f="more" title="Unit and skew">⋯</button></h2>
@@ -1104,9 +1108,12 @@ function buildChannelPanels(): void {
     field<HTMLInputElement>("skew").addEventListener("change", (e) =>
       act(() => api.channel(n, { skew: Number((e.target as HTMLInputElement).value) * 1e-9 })),
     );
-    field<HTMLInputElement>("enabled").addEventListener("change", (e) =>
-      act(() => api.channel(n, { enabled: (e.target as HTMLInputElement).checked })),
-    );
+    field<HTMLInputElement>("enabled").addEventListener("change", (e) => {
+      const on = (e.target as HTMLInputElement).checked;
+      if (on) state.activeChannel = n;
+      act(() => api.channel(n, { enabled: on }));
+    });
+    field<HTMLButtonElement>("name").addEventListener("click", () => pressChannel(n));
     field<HTMLSelectElement>("voltsPerDiv").addEventListener("change", (e) =>
       act(() => api.channel(n, { voltsPerDiv: Number((e.target as HTMLSelectElement).value) })),
     );
@@ -1132,11 +1139,38 @@ function buildChannelPanels(): void {
   }
 }
 
+/**
+ * The scope's channel button: an off channel is switched on and selected, an on channel is brought to the front,
+ * and the selected channel is switched off (the next enabled channel becomes the selected one).
+ */
+function pressChannel(n: number): void {
+  const ch = state.settings?.channels.find((c) => c.channel === n);
+  if (!ch) return;
+  if (!ch.enabled) {
+    state.activeChannel = n;
+    act(() => api.channel(n, { enabled: true }));
+  } else if (state.activeChannel !== n) {
+    state.activeChannel = n;
+    renderSettings();
+    render();
+  } else {
+    act(() => api.channel(n, { enabled: false }));
+  }
+}
+
+/** Keeps the selected channel on an enabled one, if any. */
+function syncActiveChannel(channels: ChannelSettings[]): void {
+  const on = channels.filter((c) => c.enabled).map((c) => c.channel);
+  if (on.length > 0 && !on.includes(state.activeChannel)) state.activeChannel = on[0];
+  plot.active = state.activeChannel;
+}
+
 function renderChannel(ch: ChannelSettings): void {
   const panel = document.getElementById(`ch${ch.channel}`);
   if (!panel) return;
   const field = <T extends HTMLElement>(f: string) => panel.querySelector<T>(`[data-f="${f}"]`)!;
   panel.classList.toggle("off", !ch.enabled);
+  panel.classList.toggle("active", ch.enabled && ch.channel === state.activeChannel);
   field<HTMLInputElement>("enabled").checked = ch.enabled;
   field("bwl").classList.toggle("on", ch.bandwidthLimit);
   field("inv").classList.toggle("on", ch.inverted);

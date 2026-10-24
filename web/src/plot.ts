@@ -67,6 +67,8 @@ export class ScopePlot {
   xy = false;
   /** Persistence decay time in ms; 0 = off, Infinity = infinite. */
   persistence = 0;
+  /** The selected channel, drawn on top of the others (like the scope's active channel). */
+  active = 1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -216,6 +218,11 @@ export class ScopePlot {
 
   // ---------- drawing ----------
 
+  /** Drawing order: references, other traces, the active channel. */
+  private layer(channel: number): number {
+    return isRef(channel) ? 0 : channel === this.active ? 2 : 1;
+  }
+
   draw(frame: WaveformFrame | null, settings: ScopeSettings | null): void {
     const { ctx } = this;
     const a = this.area;
@@ -245,14 +252,13 @@ export class ScopePlot {
     ctx.beginPath();
     ctx.rect(a.x, a.y, a.w, a.h);
     ctx.clip();
-    // References first, so live traces are drawn on top of them.
-    for (const wf of [...frame.channels].sort((p, q) => Number(isRef(q.channel)) - Number(isRef(p.channel)))) {
-      this.trace(ctx, wf, isRef(wf.channel) ? 0.8 : 1);
-    }
+    // References first, so live traces are drawn on top of them; the active channel last.
+    const ordered = [...frame.channels].sort((p, q) => this.layer(p.channel) - this.layer(q.channel));
+    for (const wf of ordered) this.trace(ctx, wf, isRef(wf.channel) ? 0.8 : 1);
     ctx.restore();
 
     // Ground markers on the left edge (channels and math).
-    for (const wf of frame.channels) {
+    for (const wf of ordered) {
       if (isRef(wf.channel)) continue;
       const y = this.yOfVolt(0, wf.channel)!;
       this.marker(a.x - 1, clamp(y, a.y, a.y + a.h), "right", channelColor(wf.channel), wf.channel === 0 ? "M" : String(wf.channel));

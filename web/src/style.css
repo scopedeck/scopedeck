@@ -253,6 +253,18 @@ body:not(.connected) .sidebar { opacity: 0.45; pointer-events: none; }
 .channel { border-left: 3px solid var(--ch); }
 .channel h2 { color: var(--ch); }
 .channel.off .row { opacity: 0.5; }
+.channel.active { border-left-width: 6px; background: color-mix(in srgb, var(--ch) 7%, var(--surface)); }
+.channel h2 .ch-name {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.channel h2 .ch-name:hover { text-decoration: underline; }
 
 .switch { position: relative; width: 30px; height: 17px; display: inline-block; }
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }

@@ -24,7 +24,9 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
   cannot be switched off again remotely); works with cursors, measurements, FFT and CSV export
 - **History**: browse the scope's stored acquisitions frame by frame with timestamps, play them back, export all as CSV
 - **Setups**: save the scope setup to a file and load it back, store/recall the scope's 20 setup memories, default setup
-- Channel extras: invert, unit V/A (current probes), skew ±100 ns, fine V/div steps (Shift+click ‹ ›)
+- Channel extras: invert, unit V/A (current probes), skew ±100 ns, fine V/div steps (Shift+click ‹ ›). Clicking a
+  channel's name works like the scope's channel button: an off channel is switched on, an on channel is brought to
+  the front (drawn on top), and pressing the front channel again switches it off
 - **Zoom**: drag across the plot or use the mouse wheel; the zoomed part is read from the scope at up to full
   resolution (`WFSU FP`). Double-click or *Reset zoom* shows the whole record again
 - **References**: freeze up to four traces (R1–R4) or load a CSV export, shown as overlays with their own measurements
