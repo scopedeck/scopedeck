@@ -136,7 +136,9 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 - `SCDP` returns an 800×480 RGB565 BMP (top-down, BI_BITFIELDS) followed by one extra `\n` byte.
 - **Measurement gate:** `MEGS ON`, `MEGA <t>`, `MEGB <t>` (times relative to the trigger) limit `PAVA?` to a window;
   `MEGS?` never answers and `MEGA`/`MEGB` are write-only, so ScopeDeck remembers the gate and switches it off on
-  disconnect. `C1-C2:MEAD? PHA` / `FRR` take ~0.2 s each and answer `****` when a channel has no signal.
+  disconnect. `C1-C2:MEAD? PHA` / `FRR` take ~0.2 s each and answer `****` when a channel has no signal or (PHA)
+  less than a full period is on screen; the app's own delay needs only one rising edge per channel. Both use each
+  channel's mid level, so a clipped trace (partly off screen) shifts the result on slow edges.
 
 ## Related projects
 
