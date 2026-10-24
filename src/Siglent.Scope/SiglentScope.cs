@@ -586,6 +586,82 @@ public sealed class SiglentScope : IAsyncDisposable
         return WriteAllAsync([$"$$SY_FP {key},{value}"], ct);
     }
 
+    // ---------- pass/fail mask test ----------
+
+    /// <summary>Mask tolerance range in divisions (programming guide).</summary>
+    public const double MinMask = 0.04, MaxMask = 4;
+
+    private static readonly TimeSpan PassFailCommandGap = TimeSpan.FromMilliseconds(50);
+
+    public Task<PassFailState> GetPassFailAsync(CancellationToken ct = default) => Locked(() => ReadPassFailAsync(ct));
+
+    /// <summary>
+    /// Changes the pass/fail test. The guide's PFDS TEST,… is ignored on FW 1.3.27; the test is enabled with the
+    /// undocumented PFEN, and the scope only accepts PFCM and PFOP while it is enabled, so creating a mask or
+    /// starting the test enables it first. Disabling stops the test before PFEN OFF.
+    /// </summary>
+    public Task<PassFailState> UpdatePassFailAsync(PassFailUpdate update, CancellationToken ct = default)
+    {
+        if (update.XMask is { } x && x is < MinMask or > MaxMask || update.YMask is { } y && y is < MinMask or > MaxMask)
+            throw new ArgumentException($"The mask tolerance must be {MinMask}–{MaxMask} div.");
+        var source = update.Source?.Trim().ToUpperInvariant();
+        if (source is not null && !(source.Length == 2 && source[0] == 'C' && source[1] - '0' is var n && n >= 1 && n <= ChannelCount))
+            throw new ArgumentException($"Unknown pass/fail source {update.Source}.");
+
+        return Locked(async () =>
+        {
+            async Task Send(string command)
+            {
+                await _scpi.WriteAsync(command, ct);
+                // Input that arrives while the scope is still taking a pass/fail command is lost: an *OPC? sent
+                // right after PFST went unanswered in 2 of 3 tries; with 10 ms in between it never did.
+                await Task.Delay(PassFailCommandGap, ct);
+                await _scpi.QueryAsync("*OPC?", ct);
+            }
+            string OnOff(bool on) => on ? "ON" : "OFF";
+
+            bool enable = update.Enabled == true || update.CreateMask || update.Running == true;
+            if (enable) await Send("PFEN ON");
+            if (source is not null) await Send($"PFSC {source}");
+            if (update.XMask is not null || update.YMask is not null)
+            {
+                var current = await ReadPassFailAsync(ct);
+                double mx = update.XMask ?? current.XMask, my = update.YMask ?? current.YMask;
+                await Send($"PFST XMASK,{ScpiValue.Format(Math.Round(mx, 2), "")},YMASK,{ScpiValue.Format(Math.Round(my, 2), "")}");
+            }
+            if (update.StopOnFail is { } stop) await Send($"PFFS {OnOff(stop)}");
+            if (update.Beep is { } beep) await Send($"PFBF {OnOff(beep)}");
+            if (update.ShowMessage is { } show) await Send($"PFDS {OnOff(show)}");
+            if (update.CreateMask) await Send("PFCM");
+            if (update.Running is { } run) await Send($"PFOP {OnOff(run)}");
+            if (update.Enabled == false)
+            {
+                await Send("PFOP OFF");
+                await Send("PFEN OFF");
+            }
+            return await ReadPassFailAsync(ct);
+        });
+    }
+
+    private async Task<PassFailState> ReadPassFailAsync(CancellationToken ct)
+    {
+        async Task<bool> On(string query) => ScpiValue.ParseBool(await _scpi.QueryAsync(query, ct));
+        bool enabled = await On("PFEN?");
+        bool running = await On("PFOP?");
+        string source = ScpiValue.StripHeader(await _scpi.QueryAsync("PFSC?", ct)).ToUpperInvariant();
+        var mask = ScpiValue.ParseList(await _scpi.QueryAsync("PFST?", ct));
+        bool stop = await On("PFFS?");
+        bool beep = await On("PFBF?");
+        bool show = await On("PFDS?");
+        var counts = ScpiValue.ParseList(await _scpi.QueryAsync("PFDD?", ct));
+        double Number(string[] list, string key) => FindPair(list, key) is { } v ? ScpiValue.ParseNumber(v) : 0;
+        long fail = (long)Number(counts, "FAIL"), pass = (long)Number(counts, "PASS"), total = (long)Number(counts, "TOTAL");
+        // Before a test has been started, FW 1.3.27 can report leftovers such as FAIL,865,PASS,-865,TOTAL,0.
+        if (pass < 0 || fail + pass != total) (fail, pass, total) = (0, 0, 0);
+        return new PassFailState(enabled, running, source, Number(mask, "XMASK"), Number(mask, "YMASK"), stop, beep, show,
+            fail, pass, total);
+    }
+
     // ---------- history ----------
 
     /// <summary>Switches history mode on or off. While on, acquisition stops and WF? returns the selected frame.</summary>

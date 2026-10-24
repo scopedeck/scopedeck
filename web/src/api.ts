@@ -126,6 +126,23 @@ export type TriggerUpdate = Partial<Omit<TriggerSettings, "level" | "holdValue" 
 };
 export type AcquisitionUpdate = Partial<AcquisitionSettings>;
 
+/** The scope's pass/fail mask test; xMask/yMask are the tolerances in divisions. */
+export interface PassFailState {
+  enabled: boolean;
+  running: boolean;
+  source: string;
+  xMask: number;
+  yMask: number;
+  stopOnFail: boolean;
+  beep: boolean;
+  showMessage: boolean;
+  fail: number;
+  pass: number;
+  total: number;
+}
+
+export type PassFailUpdate = Partial<Omit<PassFailState, "fail" | "pass" | "total">> & { createMask?: boolean };
+
 /** phase: idle, starting, downloading, verifying, installing, restarting or failed. */
 export interface UpdateProgress {
   phase: string;
@@ -203,6 +220,8 @@ export const api = {
   loadSetup: (file: Blob) => request<void>("POST", "/api/setup", file),
   saveMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/save`),
   recallMemory: (slot: number) => request<void>("POST", `/api/setup/memory/${slot}/recall`),
+  passFail: () => request<PassFailState>("GET", "/api/passfail"),
+  updatePassFail: (update: PassFailUpdate) => request<PassFailState>("POST", "/api/passfail", update),
   /** Presses a front-panel key; knobs turn with value −1/+1 and are pushed with 0. */
   panel: (key: number, value = 1) => request<void>("POST", "/api/panel", { key, value }),
   scpi: (command: string) => request<{ response: string | null }>("POST", "/api/scpi", { command }),

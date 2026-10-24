@@ -110,6 +110,12 @@ public static class SiglentServer
             scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1,
                 gateStart is { } gs && gateEnd is { } ge ? (gs, ge) : null, ct)));
 
+        api.MapGet("/passfail", (ScopeService scope, CancellationToken ct) =>
+            scope.RunAsync(s => s.GetPassFailAsync(ct)));
+
+        api.MapPost("/passfail", (PassFailUpdate update, ScopeService scope, CancellationToken ct) =>
+            scope.RunAsync(s => s.UpdatePassFailAsync(update, ct)));
+
         api.MapPost("/panel", async (PanelRequest request, ScopeService scope, CancellationToken ct) =>
         {
             await scope.RunAsync(s => s.PressPanelKeyAsync(request.Key, request.Value ?? 1, ct));

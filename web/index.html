@@ -47,6 +47,7 @@
           <button id="fft-btn" class="toggle" title="Show the spectrum of a trace">FFT</button>
           <button id="math-btn" class="toggle" title="Add a math trace computed from the channels">Math</button>
           <button id="history-btn" class="toggle" title="Browse the scope's stored acquisitions (stops acquisition while on)">History</button>
+          <button id="pf-btn" class="toggle" title="Pass/fail mask test on the scope: count waveforms that leave a band around a good one">Mask</button>
           <button id="ref-btn" class="toggle" title="Reference traces: freeze a trace or load a CSV to compare against">Ref</button>
           <button id="xy-btn" class="toggle" title="XY mode: C1 horizontal, C2 vertical">XY</button>
           <label class="inline" title="Afterglow of earlier acquisitions">Persist
@@ -114,6 +115,20 @@
           <span id="hist-info" class="mono"></span>
           <span class="spacer"></span>
           <button id="hist-export" title="All frames at the current Points setting">Export all (CSV)</button>
+        </section>
+        <section id="pf-panel" class="strip" hidden>
+          <b class="strip-title">Mask</b>
+          <label class="inline">Source <select id="pf-source"></select></label>
+          <label class="inline" title="Horizontal tolerance of the mask around the waveform">X ±
+            <span class="unit-input"><input id="pf-x" type="number" min="0.04" max="4" step="0.02" /><span>div</span></span></label>
+          <label class="inline" title="Vertical tolerance of the mask around the waveform">Y ±
+            <span class="unit-input"><input id="pf-y" type="number" min="0.04" max="4" step="0.02" /><span>div</span></span></label>
+          <button id="pf-create" title="Creates the mask from the current waveform of the source (replaces the old mask)">Create mask</button>
+          <button id="pf-run" class="toggle" title="Start or stop counting; starting resets the counters">Start</button>
+          <label class="inline" title="The scope stops at the first failed waveform"><input type="checkbox" id="pf-stop" /> Stop on fail</label>
+          <label class="inline" title="The scope beeps for each failed waveform"><input type="checkbox" id="pf-beep" /> Beep</label>
+          <span class="spacer"></span>
+          <span id="pf-counts" class="mono pf-counts"></span>
         </section>
         <section id="spectrum-panel" class="spectrum-panel" hidden>
           <div class="spectrum-head">

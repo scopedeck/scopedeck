@@ -43,6 +43,8 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 - **Capture memory**: the complete acquisition (up to 14 Mpts per channel) as CSV. A running scope is paused
   for the transfer (~4 s for 7 Mpts) and then resumed
 - **Log**: records measurements of every frame; click again to stop and download the CSV
+- **Pass/Fail mask test** (the scope's own): create a mask with an X/Y tolerance from a good waveform, then count
+  passing and failing waveforms, optionally stopping or beeping on a fail. ScopeDeck draws the mask band on the plot
 - **Front panel**: the scope's live screen with its soft keys, menu, channel, trigger and run buttons and all
   knobs (click to turn or push, or use the mouse wheel), for the scope's own menus that have no remote command
 - Scope screenshot (PNG), CSV export of the displayed waveform, PNG export of the plot, SCPI console
@@ -147,6 +149,12 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
   detent (+1 = clockwise) and `$$SY_FP <knob>,0` pushes it. Key codes are from klumw/sdsremote. Pressing Math twice
   switches the scope's math display off again, which `MATH:TRA OFF` cannot. Default setup (13) and Print (25) are
   not offered.
+- **Pass/Fail** (FW 1.3.27 differs from the guide): `PFDS TEST,ON,DISPLAY,ON` is ignored; the test is enabled with the
+  undocumented `PFEN ON`/`OFF` (`PFEN?` answers), and `PFDS ON`/`OFF` / `PFDS?` are only the on-screen message.
+  `PFCM` and `PFOP` work only while the test is enabled; `PFOP ON` resets the counters. The scope does not draw
+  the mask, so ScopeDeck draws its own from the same waveform. Input that arrives while the scope is still taking a
+  pass/fail command is lost (`*OPC?` right after `PFST` went unanswered); ScopeDeck waits 50 ms after each one.
+  Before a test has run, `PFDD?` can report leftovers like `FAIL,865,PASS,-865,TOTAL,0`.
 
 ## Related projects
 

@@ -1,5 +1,6 @@
 import type { ChannelWaveform, ScopeSettings, WaveformFrame } from "./api";
 import { si } from "./format";
+import type { Mask } from "./mask";
 
 export const CHANNEL_COLORS = ["#f5d742", "#e85ce8", "#4fc3f7", "#5ee08a"];
 export const MATH_COLOR = "#e8edf2";
@@ -69,6 +70,8 @@ export class ScopePlot {
   persistence = 0;
   /** The selected channel, drawn behind the other live traces (as the scope draws its selected channel). */
   active = 1;
+  /** Pass/fail mask, drawn as a shaded band behind the traces (in screen divisions, like the scope's mask). */
+  mask: Mask | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext("2d")!;
@@ -218,6 +221,36 @@ export class ScopePlot {
 
   // ---------- drawing ----------
 
+  /** Shades the mask band; each run of points with values is one closed shape (upper edge out, lower edge back). */
+  private drawMask(mask: Mask): void {
+    const { ctx } = this;
+    const a = this.area;
+    const rec = this.recordWindow()!;
+    const n = mask.upper.length;
+    const x = (i: number) => this.xOfTime(rec.start + ((i + 0.5) / n) * rec.span);
+    const y = (div: number) => a.y + a.h / 2 - div * (a.h / V_DIVS);
+    ctx.save();
+    ctx.fillStyle = "rgba(150, 160, 180, 0.2)";
+    ctx.strokeStyle = "rgba(170, 180, 200, 0.55)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < n; ) {
+      if (Number.isNaN(mask.upper[i])) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j + 1 < n && !Number.isNaN(mask.upper[j + 1])) j++;
+      ctx.beginPath();
+      for (let k = i; k <= j; k++) ctx.lineTo(x(k), y(mask.upper[k]));
+      for (let k = j; k >= i; k--) ctx.lineTo(x(k), y(mask.lower[k]));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      i = j + 1;
+    }
+    ctx.restore();
+  }
+
   /** Drawing order: references, the selected channel, the other traces. */
   private layer(channel: number): number {
     return isRef(channel) ? 0 : channel === this.active ? 1 : 2;
@@ -252,6 +285,7 @@ export class ScopePlot {
     ctx.beginPath();
     ctx.rect(a.x, a.y, a.w, a.h);
     ctx.clip();
+    if (this.mask) this.drawMask(this.mask);
     // References first, so live traces are drawn on top of them; then the selected channel, then the others.
     const ordered = [...frame.channels].sort((p, q) => this.layer(p.channel) - this.layer(q.channel));
     for (const wf of ordered) this.trace(ctx, wf, isRef(wf.channel) ? 0.8 : 1);

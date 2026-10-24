@@ -81,6 +81,33 @@ public sealed class SimulatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RunsThePassFailTest()
+    {
+        var pf = await _scope.UpdatePassFailAsync(new PassFailUpdate(XMask: 0.4, YMask: 0.3, CreateMask: true, Running: true));
+        Assert.True(pf.Enabled && pf.Running);
+        Assert.Equal((0.4, 0.3, "C1"), (pf.XMask, pf.YMask, pf.Source));
+
+        await Task.Delay(400);
+        pf = await _scope.GetPassFailAsync();
+        Assert.True(pf.Pass > 0);
+        Assert.Equal(0, pf.Fail);
+
+        // Moving the waveform makes it fail; with stop on fail the scope stops.
+        await _scope.UpdatePassFailAsync(new PassFailUpdate(StopOnFail: true));
+        await _scope.UpdateChannelAsync(1, new ChannelUpdate(Offset: 0.5));
+        await Task.Delay(300);
+        pf = await _scope.GetPassFailAsync();
+        Assert.Equal(1, pf.Fail);
+        Assert.False(pf.Running);
+        Assert.Equal("STOP", (await _scope.GetSettingsAsync()).Trigger.Mode);
+
+        pf = await _scope.UpdatePassFailAsync(new PassFailUpdate(Enabled: false));
+        Assert.False(pf.Enabled || pf.Running);
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdatePassFailAsync(new PassFailUpdate(XMask: 5)));
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.UpdatePassFailAsync(new PassFailUpdate(Source: "C3")));
+    }
+
+    [Fact]
     public async Task PressesOnlyKnownPanelKeys()
     {
         // CH2 key: selects C2; pressed again switches it off; a third press switches it on again. A channel switched

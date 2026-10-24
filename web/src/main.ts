@@ -1,7 +1,18 @@
 import "./style.css";
-import { api, ApiError, type ChannelSettings, type HistoryState, type ScopeSettings, type TriggerSettings, type WaveformFrame } from "./api";
+import {
+  api,
+  ApiError,
+  type ChannelSettings,
+  type HistoryState,
+  type PassFailState,
+  type PassFailUpdate,
+  type ScopeSettings,
+  type TriggerSettings,
+  type WaveformFrame,
+} from "./api";
 import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
+import { buildMask } from "./mask";
 import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
 import { delayBetween, measure } from "./measure";
 import { channelColor, channelName, isRef, ScopePlot, type CursorHit, type CursorMode } from "./plot";
@@ -15,6 +26,7 @@ const VOLT_DIVS = series125(500e-6, 10);
 const PROBES = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
 const SETTINGS_REFRESH_MS = 1500;
 const SCOPE_MEASURE_REFRESH_MS = 2000;
+const PASS_FAIL_REFRESH_MS = 1000;
 
 type MeasureSource = "app" | "scope";
 
@@ -42,6 +54,9 @@ const state = {
   historyPlaying: false,
   /** The selected channel: highlighted and, like on the scope, drawn behind the other channels. */
   activeChannel: 1,
+  /** The scope's pass/fail test, read when connecting and polled while it is enabled. */
+  passFail: null as PassFailState | null,
+  passFailAt: 0,
 };
 
 const refs = new References();
@@ -127,6 +142,9 @@ function setConnected(connected: boolean, label?: string): void {
   if (!connected) {
     state.frame = null;
     state.settings = null;
+    state.passFail = null;
+    plot.mask = null;
+    renderPassFail();
     setPanelOpen(false);
     render();
   } else {
@@ -162,9 +180,11 @@ async function onConnected(model: string, firmware: string): Promise<void> {
   const status = await api.status();
   state.channelCount = status.channelCount ?? 2;
   buildChannelPanels();
+  fillPassFailSources();
   updateTraceOptions();
   setConnected(true, `${model} · FW ${firmware}`);
   await refreshSettings();
+  await refreshPassFail();
 }
 
 // ---------- live loop ----------
@@ -187,6 +207,7 @@ async function startLoop(): Promise<void> {
         if (state.measureSource === "scope" && performance.now() - state.scopeMeasurementsAt > SCOPE_MEASURE_REFRESH_MS) {
           await refreshScopeMeasurements();
         }
+        if (state.passFail?.enabled && performance.now() - state.passFailAt > PASS_FAIL_REFRESH_MS) await refreshPassFail();
         render();
         frames++;
         const now = performance.now();
@@ -669,6 +690,98 @@ $<HTMLInputElement>("ref-file").addEventListener("change", async (e) => {
   renderRefs();
   render();
 });
+
+// ---------- pass/fail mask test ----------
+
+async function refreshPassFail(): Promise<void> {
+  if (!state.connected) return;
+  showPassFail(await api.passFail());
+}
+
+/** Takes a new state from the scope; tells the user once when stop on fail has stopped the scope. */
+function showPassFail(next: PassFailState): void {
+  const before = state.passFail;
+  state.passFail = next;
+  state.passFailAt = performance.now();
+  if (before?.running && !next.running && next.stopOnFail && next.fail > before.fail) {
+    toast("A waveform failed the mask: the scope stopped. Press Auto or Normal to continue.", "info");
+    void refreshSettings().catch(handleError);
+  }
+  if (!next.enabled) plot.mask = null;
+  renderPassFail();
+}
+
+function renderPassFail(): void {
+  const pf = state.passFail;
+  const on = !!pf?.enabled;
+  $("pf-btn").classList.toggle("on", on);
+  $("pf-panel").hidden = !on;
+  if (!pf || !on) return;
+  setSelect($<HTMLSelectElement>("pf-source"), pf.source);
+  setInput($<HTMLInputElement>("pf-x"), pf.xMask);
+  setInput($<HTMLInputElement>("pf-y"), pf.yMask);
+  const run = $("pf-run");
+  run.classList.toggle("on", pf.running);
+  run.textContent = pf.running ? "Stop" : "Start";
+  $<HTMLInputElement>("pf-stop").checked = pf.stopOnFail;
+  $<HTMLInputElement>("pf-beep").checked = pf.beep;
+  const rate = pf.total > 0 ? ` (${((pf.fail / pf.total) * 100).toFixed(pf.fail > 0 && pf.fail < pf.total / 100 ? 3 : 1)} %)` : "";
+  $("pf-counts").innerHTML =
+    `<span class="${pf.fail > 0 ? "pf-fail" : ""}">Fail ${pf.fail}${rate}</span>  ·  Pass ${pf.pass}  ·  Total ${pf.total}` +
+    (pf.running ? "" : `  ·  <span class="muted">${pf.total > 0 ? "stopped" : "not started"}</span>`);
+}
+
+function updatePassFail(update: PassFailUpdate): Promise<void> {
+  return api
+    .updatePassFail(update)
+    .then(showPassFail)
+    .catch(handleError);
+}
+
+function fillPassFailSources(): void {
+  const select = $<HTMLSelectElement>("pf-source");
+  select.replaceChildren();
+  for (let n = 1; n <= state.channelCount; n++) select.add(new Option(`C${n}`, `C${n}`));
+}
+
+/** The scope builds the mask from its waveform; the app draws its own copy from the latest frame. */
+function drawMaskFrom(source: string, xMask: number, yMask: number): void {
+  const n = Number(source.slice(1));
+  const wf = state.frame?.channels.find((c) => c.channel === n);
+  plot.mask = wf && state.frame ? buildMask(wf, state.frame, xMask, yMask) : null;
+  render();
+}
+
+$("pf-btn").addEventListener("click", () => {
+  if (!state.connected) return toast("Connect to the oscilloscope first.");
+  if (state.passFail?.enabled) {
+    updatePassFail({ enabled: false, showMessage: false });
+  } else {
+    updatePassFail({ enabled: true, showMessage: true }).then(() => {
+      if (state.passFail?.enabled) toast("Set the tolerance, then Create mask from a good waveform and Start.", "info");
+    });
+  }
+});
+$("pf-source").addEventListener("change", (e) => updatePassFail({ source: (e.target as HTMLSelectElement).value }));
+for (const [id, key] of [["pf-x", "xMask"], ["pf-y", "yMask"]] as const) {
+  $(id).addEventListener("change", (e) => {
+    const value = Number((e.target as HTMLInputElement).value);
+    if (!(value >= 0.04 && value <= 4)) return toast("The tolerance must be 0.04–4 div.");
+    updatePassFail({ [key]: value });
+  });
+}
+$("pf-create").addEventListener("click", () => {
+  const source = $<HTMLSelectElement>("pf-source").value;
+  const xMask = Number($<HTMLInputElement>("pf-x").value);
+  const yMask = Number($<HTMLInputElement>("pf-y").value);
+  updatePassFail({ source, xMask, yMask, createMask: true }).then(() => drawMaskFrom(source, xMask, yMask));
+});
+$("pf-run").addEventListener("click", () => {
+  if (!plot.mask && !state.passFail?.running) toast("Testing against the mask stored on the scope; Create mask makes a new one.", "info");
+  updatePassFail({ running: !state.passFail?.running });
+});
+$("pf-stop").addEventListener("change", (e) => updatePassFail({ stopOnFail: (e.target as HTMLInputElement).checked }));
+$("pf-beep").addEventListener("change", (e) => updatePassFail({ beep: (e.target as HTMLInputElement).checked }));
 
 // ---------- history ----------
 

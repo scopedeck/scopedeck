@@ -67,6 +67,31 @@ public sealed record AcquisitionSettings(string Mode, int Averages, string Memor
 /// <param name="FrameTime">Acquisition time of the current frame, as the scope reports it ("00:26:45.388406").</param>
 public sealed record HistoryState(bool Enabled, int Frame, int FrameCount, string? FrameTime);
 
+/// <summary>The scope's pass/fail mask test (Utility → Pass/Fail).</summary>
+/// <param name="Enabled">"Enable Test" (PFEN, not in the programming guide).</param>
+/// <param name="Running">"Operation": the test is counting (PFOP); starting it resets the counters.</param>
+/// <param name="Source">Tested channel (C1, C2).</param>
+/// <param name="XMask">Horizontal tolerance of the mask around the waveform, in divisions.</param>
+/// <param name="YMask">Vertical tolerance, in divisions.</param>
+/// <param name="StopOnFail">The scope stops acquiring (and the test) at the first failed waveform.</param>
+/// <param name="Beep">"Output": the scope beeps for each failed waveform.</param>
+/// <param name="ShowMessage">The fail/pass/total counters on the scope's screen.</param>
+public sealed record PassFailState(
+    bool Enabled, bool Running, string Source, double XMask, double YMask,
+    bool StopOnFail, bool Beep, bool ShowMessage, long Fail, long Pass, long Total);
+
+/// <param name="CreateMask">Creates a new mask from the current waveform of the source (PFCM).</param>
+public sealed record PassFailUpdate(
+    bool? Enabled = null,
+    bool? Running = null,
+    string? Source = null,
+    double? XMask = null,
+    double? YMask = null,
+    bool? StopOnFail = null,
+    bool? Beep = null,
+    bool? ShowMessage = null,
+    bool CreateMask = false);
+
 /// <param name="TriggerDelay">Screen-center time relative to the trigger, as shown on the scope ("Delay").</param>
 public sealed record ScopeSettings(
     double TimePerDiv,

@@ -123,6 +123,7 @@ public sealed class FakeScopeServer : IAsyncDisposable
 
         lock (_state)
         {
+            CountPassFail();
             switch (head)
             {
                 case "*IDN?": return Text("Siglent Technologies,SDS1202X-E,SIMULATOR00001,1.3.27");
@@ -188,6 +189,33 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "MEGS" or "MEGA" or "MEGB": return null;
                 // Front-panel keys: CH1/CH2 work like on the scope, the others are accepted without effect.
                 case "$$SY_FP": PressKey(arg); return null;
+                // Pass/fail: like FW 1.3.27, PFCM and PFOP only work while the test is enabled (PFEN, not in the
+                // guide), PFDS? reports the message display, and starting the test resets the counters.
+                case "PFEN": _pf.Enabled = OnArg(arg); if (!_pf.Enabled) _pf.Running = false; return null;
+                case "PFEN?": return Line("PFEN", _pf.Enabled ? "ON" : "OFF");
+                case "PFDS": if (arg is "ON" or "OFF") _pf.Message = OnArg(arg); return null;
+                case "PFDS?": return Line("PFDS", _pf.Message ? "ON" : "OFF");
+                case "PFSC": _pf.Source = arg.ToUpperInvariant(); return null;
+                case "PFSC?": return Line("PFSC", _pf.Source);
+                case "PFST":
+                    var pfst = arg.Split(',', StringSplitOptions.TrimEntries);
+                    (_pf.X, _pf.Y) = (double.Parse(pfst[1], CultureInfo.InvariantCulture), double.Parse(pfst[3], CultureInfo.InvariantCulture));
+                    return null;
+                case "PFST?": return Line("PFST", FormattableString.Invariant($"XMASK,{_pf.X:0.00},YMASK,{_pf.Y:0.00}"));
+                case "PFFS": _pf.StopOnFail = OnArg(arg); return null;
+                case "PFFS?": return Line("PFFS", _pf.StopOnFail ? "ON" : "OFF");
+                case "PFBF": _pf.Beep = OnArg(arg); return null;
+                case "PFBF?": return Line("PFBF", _pf.Beep ? "ON" : "OFF");
+                case "PFCM": if (_pf.Enabled) _pf.Mask = SourceChannel(); return null;
+                case "PFOP":
+                    if (!_pf.Enabled) return null;
+                    bool start = OnArg(arg);
+                    if (start && !_pf.Running) (_pf.Fail, _pf.Pass, _pf.At) = (0, 0, DateTime.UtcNow);
+                    _pf.Running = start;
+                    return null;
+                case "PFOP?": return Line("PFOP", _pf.Running ? "ON" : "OFF");
+                case "PFDD?":
+                    return Line("PFDD", FormattableString.Invariant($"FAIL,{_pf.Fail},PASS,{_pf.Pass},TOTAL,{_pf.Fail + _pf.Pass}"));
                 case "WFSU":
                     var p = arg.Split(',', StringSplitOptions.TrimEntries);
                     for (int i = 0; i + 1 < p.Length; i += 2)
@@ -241,6 +269,47 @@ public sealed class FakeScopeServer : IAsyncDisposable
     }
 
     private int _selected = 1;
+
+    private sealed class PassFail
+    {
+        public bool Enabled, Running, Message, StopOnFail, Beep;
+        public string Source = "C1";
+        public double X = 0.2, Y = 0.2;
+        public Channel? Mask;
+        public long Fail, Pass;
+        public DateTime At;
+    }
+
+    private readonly PassFail _pf = new();
+
+    private static bool OnArg(string arg) => arg.Trim().Equals("ON", StringComparison.OrdinalIgnoreCase);
+
+    private Channel SourceChannel() => _s.Channels[_pf.Source[1] - '1'];
+
+    /// <summary>~15 tested waveforms per second while running; they fail while the source channel's vertical
+    /// settings differ from those at mask creation (the waveform moved on screen).</summary>
+    private void CountPassFail()
+    {
+        if (!_pf.Running) return;
+        var now = DateTime.UtcNow;
+        long n = (long)((now - _pf.At).TotalSeconds * 15);
+        if (n == 0) return;
+        _pf.At = now;
+        var c = SourceChannel();
+        bool fails = _pf.Mask is not { } m || m.Vdiv != c.Vdiv || m.Ofst != c.Ofst || m.Skew != c.Skew || !c.On;
+        if (!fails)
+        {
+            _pf.Pass += n;
+            return;
+        }
+        if (_pf.StopOnFail)
+        {
+            _pf.Fail += 1;
+            _pf.Running = false;
+            _s = _s with { Trmd = "STOP" };
+        }
+        else _pf.Fail += n;
+    }
 
     /// <summary>CH1/CH2 keys (39/40): an off channel is switched on and selected, an unselected one is selected,
     /// the selected one is switched off and stays selected (as on the SDS1202X-E).</summary>

@@ -254,6 +254,11 @@ body:not(.connected) .sidebar { opacity: 0.45; pointer-events: none; }
 .channel h2 { color: var(--ch); }
 .channel.off .row { opacity: 0.5; }
 
+.pf-counts { white-space: pre; }
+.pf-fail { color: var(--danger); font-weight: 600; }
+#pf-panel .unit-input input { width: 58px; }
+#pf-panel .unit-input span { width: auto; }
+
 /* ---------- virtual front panel (non-modal) ---------- */
 
 .panel-dialog {
