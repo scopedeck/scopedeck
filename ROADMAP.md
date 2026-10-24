@@ -43,7 +43,7 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 
 - **Channel buttons** — the channel-name links press the scope's own CH1/CH2 key; the selected channel is drawn behind the others, as on the scope.
 
-## Done for the next release
+## Done in RC 9
 
 - **Pass/Fail mask testing** — create a mask from a good waveform, count pass/fail, stop or beep on fail (`PF*`,
   `PFEN` not in the guide); the mask band is drawn on the plot.
