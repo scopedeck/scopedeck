@@ -142,6 +142,9 @@
             <button data-source="app" class="active" title="Computed in the app from the transferred samples, every frame">App</button>
             <button data-source="scope" title="The scope's own measurements on full memory (slower, ~0.5 s per channel)">Scope</button>
           </div>
+          <label class="inline gate-toggle" title="Measure only between the X1 and X2 time cursors (app and scope measurements)">
+            <input type="checkbox" id="gate" /> Between cursors X1–X2
+          </label>
         </div>
         <div id="measurements" class="measurements"></div>
         <details class="console">

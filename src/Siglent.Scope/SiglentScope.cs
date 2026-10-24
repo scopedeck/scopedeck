@@ -159,6 +159,8 @@ public sealed class SiglentScope : IAsyncDisposable
 
     private int _averages = 16;
     private string _windowSource = "C1";
+    /// <summary>Set when this app switched the measurement gate on; it is switched off again on disconnect.</summary>
+    private bool _gateOn;
 
     // History: FRAM? returns the frame count only right after history is switched on, so it is
     // remembered (or probed) and forgotten when history is switched off.
@@ -191,11 +193,16 @@ public sealed class SiglentScope : IAsyncDisposable
     /// </summary>
     /// <param name="start">Start of the transferred range as a fraction of the record (0 = left screen edge).</param>
     /// <param name="end">End of the range (1 = right screen edge). A narrow range is read at higher resolution (zoom).</param>
-    public Task<WaveformFrame> GetFrameAsync(int maxPoints = 2000, double start = 0, double end = 1, CancellationToken ct = default)
+    /// <param name="gate">Time window (relative to the trigger) the measurements in <see cref="ChannelWaveform.Stats"/> cover; null = all.</param>
+    public Task<WaveformFrame> GetFrameAsync(int maxPoints = 2000, double start = 0, double end = 1, (double Start, double End)? gate = null, CancellationToken ct = default)
     {
         if (!(start >= 0 && end <= 1 && start < end)) throw new ArgumentException("The range must satisfy 0 ≤ start < end ≤ 1.");
-        return Locked(() => ReadWaveformsAsync(Math.Max(1, maxPoints), ct, start, end));
+        if (gate is { } g && !(g.Start < g.End)) throw new ArgumentException("The gate must end after it starts.");
+        return Locked(() => ReadWaveformsAsync(Math.Max(1, maxPoints), ct, start, end, gate));
     }
+
+    /// <summary>Samples read for envelope and measurements; 175 000 took 90 ms on the SDS1202X-E, like 2000.</summary>
+    internal const int DenseSamples = 200_000;
 
     /// <summary>
     /// Reads the complete acquisition memory (up to 14 Mpts per channel) of every enabled channel.
@@ -231,8 +238,49 @@ public sealed class SiglentScope : IAsyncDisposable
         });
     }
 
-    /// <param name="maxPoints">Decimate to about this many points on the scope (WFSU SP); null reads every sample.</param>
-    private async Task<WaveformFrame> ReadWaveformsAsync(int? maxPoints, CancellationToken ct, double start = 0, double end = 1)
+    /// <summary>
+    /// Limits the scope's own measurements to a time window relative to the trigger (MEGS/MEGA/MEGB, verified:
+    /// a window on the flat top of a square wave gives Vpp ≈ noise and no frequency); null switches the gate off.
+    /// The gate state cannot be read back (MEGS? is unanswered on FW 1.3.27).
+    /// </summary>
+    public Task SetMeasurementGateAsync((double Start, double End)? gate, CancellationToken ct = default)
+    {
+        if (gate is { } check && !(check.Start < check.End)) throw new ArgumentException("The gate must end after it starts.");
+        _gateOn = gate is not null;
+        if (gate is not { } g) return WriteAllAsync(["MEGS OFF"], ct);
+        // Gate A may not pass gate B and vice versa, so B is set before and after A.
+        string a = ScpiValue.Format(g.Start, "S"), b = ScpiValue.Format(g.End, "S");
+        return WriteAllAsync(["MEGS ON", $"MEGB {b}", $"MEGA {a}", $"MEGB {b}"], ct);
+    }
+
+    /// <summary>
+    /// The scope's delay measurements between two channels (C1-C2:MEAD?, ~0.2 s each): PHA in degrees and FRR
+    /// (first rising edge to first rising edge) in seconds. Null where the scope reports "****".
+    /// </summary>
+    public Task<IReadOnlyDictionary<string, double?>> GetDelayAsync(int a, int b, CancellationToken ct = default)
+    {
+        CheckChannel(a);
+        CheckChannel(b);
+        if (a == b) throw new ArgumentException("Delay needs two different channels.");
+        return Locked<IReadOnlyDictionary<string, double?>>(async () =>
+        {
+            var result = new Dictionary<string, double?>();
+            foreach (var type in new[] { "PHA", "FRR" })
+            {
+                // → "PHA,-89.46degree" or "FRR,****"
+                var list = ScpiValue.ParseList(await _scpi.QueryAsync($"C{a}-C{b}:MEAD? {type}", ct));
+                result[type] = list.Length > 1 ? ScpiValue.TryParseNumber(list[1].Replace("degree", "", StringComparison.OrdinalIgnoreCase)) : null;
+            }
+            return result;
+        });
+    }
+
+    /// <param name="maxPoints">
+    /// Points per channel to return; null reads every sample. With a limit, up to <see cref="DenseSamples"/> are read
+    /// and reduced to maxPoints samples plus a min/max envelope, and measured on the dense data.
+    /// </param>
+    private async Task<WaveformFrame> ReadWaveformsAsync(int? maxPoints, CancellationToken ct, double start = 0, double end = 1,
+        (double Start, double End)? gate = null)
     {
         double tdiv = ScpiValue.ParseNumber(await Q("TDIV?"));
         double delay = -ScpiValue.ParseNumber(await Q("TRDL?"));
@@ -252,15 +300,42 @@ public sealed class SiglentScope : IAsyncDisposable
             // FP selects the first sample, which makes zoomed views full-resolution (verified on hardware).
             long first = (long)Math.Floor(start * total);
             long span = Math.Max(1, (long)Math.Ceiling(end * total) - first);
-            int step = maxPoints is { } max ? (int)Math.Max(1, Math.Ceiling(span / (double)max)) : 1;
+            int step = maxPoints is null ? 1 : (int)Math.Max(1, Math.Ceiling(span / (double)DenseSamples));
             long count = (span + step - 1) / step;
             // NP must be non-zero: with NP 0 the scope ignores SP.
             await _scpi.WriteAsync($"WFSU SP,{step},NP,{count},FP,{first}", ct);
-            var data = await _scpi.QueryBlockAsync($"C{ch}:WF? DAT2", ct);
+            var volts = WaveformDecoder.ToVolts(await _scpi.QueryBlockAsync($"C{ch}:WF? DAT2", ct), vdiv, ofst);
+            double start0 = t0 + first / sara, dt = step / sara;
 
-            channels.Add(new ChannelWaveform(
-                ch, vdiv, ofst, t0 + first / sara, step / sara, total,
-                WaveformDecoder.ToVolts(data, vdiv, ofst)));
+            if (maxPoints is not { } max)
+            {
+                channels.Add(new ChannelWaveform(ch, vdiv, ofst, start0, dt, total, volts));
+                continue;
+            }
+
+            // Measure on the dense record (only the gate window, if any)…
+            var measured = volts.AsSpan();
+            double measuredStart = start0;
+            if (gate is { } g)
+            {
+                int i0 = (int)Math.Clamp(Math.Ceiling((g.Start - start0) / dt), 0, volts.Length);
+                int i1 = (int)Math.Clamp(Math.Floor((g.End - start0) / dt) + 1, i0, volts.Length);
+                measured = measured[i0..i1];
+                measuredStart = start0 + i0 * dt;
+            }
+            var stats = WaveformAnalysis.Compute(measured, measuredStart, dt, vdiv);
+
+            // …and return every k-th sample plus the min/max of each group of k for drawing.
+            int k = (int)Math.Max(1, Math.Ceiling(volts.Length / (double)max));
+            if (k == 1)
+            {
+                channels.Add(new ChannelWaveform(ch, vdiv, ofst, start0, dt, total, volts, Stats: stats));
+                continue;
+            }
+            var shown = new float[(volts.Length + k - 1) / k];
+            for (int i = 0; i < shown.Length; i++) shown[i] = volts[i * k];
+            var (min, maxEnv) = WaveformAnalysis.Envelope(volts, k);
+            channels.Add(new ChannelWaveform(ch, vdiv, ofst, start0, dt * k, total, shown, min, maxEnv, stats));
         }
 
         return new WaveformFrame(tdiv, delay, sara, channels);
@@ -613,7 +688,16 @@ public sealed class SiglentScope : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _lock.WaitAsync();
-        try { await _scpi.DisposeAsync(); }
+        try
+        {
+            // Leave the scope's measurements as the app found them.
+            if (_gateOn)
+            {
+                try { await _scpi.WriteAsync("MEGS OFF"); }
+                catch (Exception e) when (e is IOException or TimeoutException or System.Net.Sockets.SocketException) { }
+            }
+            await _scpi.DisposeAsync();
+        }
         finally { _lock.Release(); }
     }
 }

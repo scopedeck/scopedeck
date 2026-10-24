@@ -56,6 +56,48 @@ public sealed class SimulatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FrameCarriesEnvelopeAndDenseMeasurements()
+    {
+        // 700 000 samples: read densely (200 000), returned as 2000 points with a min/max envelope.
+        var c2 = (await _scope.GetFrameAsync(maxPoints: 2000)).Channels[1];
+
+        Assert.Equal(c2.Volts.Length, c2.Min!.Length);
+        Assert.All(Enumerable.Range(0, c2.Volts.Length), i => Assert.InRange(c2.Volts[i], c2.Min[i], c2.Max![i]));
+        Assert.Equal(1000, c2.Stats!.Frequency!.Value, 1);
+        Assert.InRange(c2.Stats.Max, 3.2, 3.4);
+    }
+
+    [Fact]
+    public async Task GateLimitsTheMeasurements()
+    {
+        // 0.1–0.4 ms after the trigger the square wave on C2 is high.
+        var c2 = (await _scope.GetFrameAsync(maxPoints: 2000, gate: (0.1e-3, 0.4e-3))).Channels[1];
+
+        Assert.InRange(c2.Stats!.Min, 3.2, 3.4);
+        Assert.Null(c2.Stats.Frequency);
+        await Assert.ThrowsAsync<ArgumentException>(() => _scope.GetFrameAsync(gate: (1e-3, 0.5e-3)));
+        await _scope.SetMeasurementGateAsync((0.1e-3, 0.4e-3));
+        await _scope.SetMeasurementGateAsync(null);
+    }
+
+    [Fact]
+    public async Task MeasuresDelayBetweenChannels()
+    {
+        // Skew C2 by 50 ns: the scope's FRR and the app's edge times must both see it.
+        await _scope.UpdateChannelAsync(2, new ChannelUpdate(Skew: 50e-9));
+        await _scope.UpdateTimebaseAsync(new TimebaseUpdate(TimePerDiv: 100e-6));
+
+        var scope = await _scope.GetDelayAsync(1, 2);
+        Assert.Equal(50e-9, scope["FRR"]!.Value, 1e-12);
+        Assert.Equal(0.018, scope["PHA"]!.Value, 1e-6);
+
+        var frame = await _scope.GetFrameAsync(maxPoints: 2000);
+        double e1 = frame.Channels[0].Stats!.RisingEdges[0], e2 = frame.Channels[1].Stats!.RisingEdges[0];
+        // C1 is a slow sine (8-bit codes, 9 mV/µs at the crossing), C2 a step: ~20 ns agreement is 0.007° at 1 kHz.
+        Assert.Equal(50e-9, e2 - e1, 30e-9);
+    }
+
+    [Fact]
     public async Task ZoomedFrameIsAFullResolutionSlice()
     {
         var full = await _scope.GetFrameAsync(maxPoints: 2000);

@@ -27,18 +27,18 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **Window trigger** — upper/lower limits (`TRSE WIN`, `TRLV`, `TRLV2`; not in the guide).
 - **Pattern trigger** — high/low/don't care per channel, AND/OR/NAND/NOR (`TRSE PA`, `TRPA`; thresholds stay on the scope).
 
-## Next
+## Done in RC 6
 
-- **Envelope display for slow timebases** — min/max per screen column instead of sample skipping, so hundreds of
-  cycles on screen show the true signal band and app measurements keep working.
+- **Envelope display** — up to 200k samples per channel are read and reduced to min/max per point, so slow timebases
+  show the true signal band; app measurements are made on the dense record.
+- **Measurement gate and inter-channel delay** — measurements between cursors X1–X2 (app-side, and the scope's
+  `MEGS`/`MEGA`/`MEGB`), delay and phase between channels (rising edges; `MEAD? PHA`/`FRR` for the scope source).
 
 ## Later
-
 
 - **Pass/Fail mask testing** — create a mask, count pass/fail, stop on fail (`PF*`).
 - **Serial triggers** — I²C, SPI, UART, CAN, LIN with address/ID/data qualifiers (`TRIIC:*`, `TRSPI:*`,
   `TRUART:*`, `TRCAN:*`, `TRLIN:*`).
-- **Measurement gates and inter-channel delay** (`MEGA`, `MEGB`, `MEGS`, `MEAD`) for the "Scope" measurement source.
 - **Virtual front panel** — press the scope's keys from the app via the undocumented `$$SY_FP <key>,1` (as
   klumw/sdsremote does); would also allow switching the scope's math display off.
 - **Macro recorder** — record and replay SCPI sequences for repeatable test procedures.

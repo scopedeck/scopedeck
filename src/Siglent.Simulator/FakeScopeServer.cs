@@ -111,6 +111,8 @@ public sealed class FakeScopeServer : IAsyncDisposable
         int space = line.IndexOf(' ');
         string head = (space < 0 ? line : line[..space]).ToUpperInvariant();
         string arg = space < 0 ? "" : line[(space + 1)..].Trim();
+        var mead = Regex.Match(head, @"^C(\d)-C(\d):MEAD\?$");
+        if (mead.Success) lock (_state) return Delay(mead.Groups[1].Value[0] - '0', mead.Groups[2].Value[0] - '0', arg.ToUpperInvariant());
         int ch = 0;
         if (head.Length > 3 && head[0] == 'C' && char.IsDigit(head[1]) && head[2] == ':')
         {
@@ -182,6 +184,8 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 // The real scope only answers FTIM? in history mode.
                 case "FTIM?": return _history ? Line("FTIM", $"00: 12: {10 + _frame:00}. {_frame * 1234:000000}") : null;
                 case "PNSU?": return Block("PNSU", Encoding.ASCII.GetBytes(SetupXml()));
+                // Gate commands are accepted; like FW 1.3.27, MEGS? gets no answer.
+                case "MEGS" or "MEGA" or "MEGB": return null;
                 case "WFSU":
                     var p = arg.Split(',', StringSplitOptions.TrimEntries);
                     for (int i = 0; i + 1 < p.Length; i += 2)
@@ -270,6 +274,20 @@ public sealed class FakeScopeServer : IAsyncDisposable
         if (_s.HoldType != "OFF") text += $",HV,{E(_s.HoldValue)}s";
         if (_s.HoldType is "P2" or "P1" or "I2" or "I1") text += $",HV2,{E(_s.HoldValue2)}s";
         return text;
+    }
+
+    /// <summary>Both channels rise at t = 0 (plus their skew), so delay = skew difference and phase follows at 1 kHz.</summary>
+    private byte[] Delay(int a, int b, string type)
+    {
+        string prefix = $"C{a}-C{b}:MEAD";
+        if (a > _s.Channels.Length || b > _s.Channels.Length) return Line(prefix, $"{type},****");
+        double delay = _s.Channels[b - 1].Skew - _s.Channels[a - 1].Skew;
+        return type switch
+        {
+            "PHA" => Line(prefix, $"PHA,{E(delay * 1000 * 360)}degree"),
+            "FRR" or "SKEW" => Line(prefix, $"{type},{E(delay)}S"),
+            _ => Line(prefix, $"{type},****"),
+        };
     }
 
     /// <summary>A small stand-in for the scope's nsp_config XML.</summary>

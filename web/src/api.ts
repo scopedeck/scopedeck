@@ -85,6 +85,23 @@ export interface ChannelWaveform {
   memoryPoints: number;
   volts: number[] | Float32Array;
   unit?: string;
+  /** Min/max envelope per sample interval (when the record was read denser than the returned points). */
+  min?: number[] | null;
+  max?: number[] | null;
+  /** Measurements on the densely read record (or the gate window), computed by the server. */
+  stats?: WaveformStats | null;
+}
+
+export interface WaveformStats {
+  max: number;
+  min: number;
+  mean: number;
+  rms: number;
+  frequency: number | null;
+  duty: number | null;
+  aliased: boolean;
+  /** Times of rising mid-level crossings, for delay and phase between channels. */
+  risingEdges: number[];
 }
 
 export interface WaveformFrame {
@@ -159,8 +176,15 @@ export const api = {
   disconnect: () => request<void>("POST", "/api/disconnect"),
   settings: () => request<ScopeSettings>("GET", "/api/settings"),
   /** start/end: part of the record to read (0–1); a narrow range is read at full resolution (zoom). */
-  frame: (maxPoints: number, start = 0, end = 1) =>
-    request<WaveformFrame>("GET", `/api/frame?maxPoints=${maxPoints}${start > 0 || end < 1 ? `&start=${start}&end=${end}` : ""}`),
+  /** gate: time window (s, relative to the trigger) the server's measurements cover. */
+  frame: (maxPoints: number, start = 0, end = 1, gate: [number, number] | null = null) =>
+    request<WaveformFrame>(
+      "GET",
+      `/api/frame?maxPoints=${maxPoints}${start > 0 || end < 1 ? `&start=${start}&end=${end}` : ""}${gate ? `&gateStart=${gate[0]}&gateEnd=${gate[1]}` : ""}`,
+    ),
+  /** Limits the scope's own measurements to a time window; null switches the gate off. */
+  gate: (window: [number, number] | null) => request<void>("POST", "/api/gate", window ? { start: window[0], end: window[1] } : {}),
+  delay: (a: number, b: number) => request<Record<string, number | null>>("GET", `/api/delay?a=${a}&b=${b}`),
   screenshot: () => request<Blob>("GET", "/api/screenshot"),
   /** The scope's own measurements (PAVA? ALL); null where the scope reports none. */
   measurements: (n: number) => request<Record<string, number | null>>("GET", `/api/measurements/${n}`),

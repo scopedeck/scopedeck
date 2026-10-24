@@ -79,6 +79,9 @@ public sealed record ScopeSettings(
     HistoryState History);
 
 /// <summary>One channel of a captured frame. Sample i is at FirstPointTime + i * SampleInterval.</summary>
+/// <param name="Min">Envelope: smallest value within each sample interval (null when every sample was read).</param>
+/// <param name="Max">Envelope: largest value within each sample interval.</param>
+/// <param name="Stats">Measurements on the densely read record (or the gate window), not the decimated Volts.</param>
 public sealed record ChannelWaveform(
     int Channel,
     double VoltsPerDiv,
@@ -86,7 +89,10 @@ public sealed record ChannelWaveform(
     double FirstPointTime,
     double SampleInterval,
     long MemoryPoints,
-    float[] Volts);
+    float[] Volts,
+    float[]? Min = null,
+    float[]? Max = null,
+    WaveformStats? Stats = null);
 
 public sealed record WaveformFrame(
     double TimePerDiv,

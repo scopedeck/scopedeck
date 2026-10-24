@@ -3,7 +3,7 @@ import { api, ApiError, type ChannelSettings, type HistoryState, type ScopeSetti
 import { series125, si } from "./format";
 import { spectrum, WINDOWS, type Spectrum, type WindowName } from "./fft";
 import { computeMath, MATH_CHANNEL, MATH_OPS, type MathOp, type MathSettings } from "./math";
-import { measure } from "./measure";
+import { delayBetween, measure } from "./measure";
 import { channelColor, channelName, isRef, ScopePlot, type CursorHit, type CursorMode } from "./plot";
 import { References } from "./refs";
 import { SpectrumPlot } from "./spectrum";
@@ -29,6 +29,11 @@ const state = {
   measureSource: "app" as MeasureSource,
   scopeMeasurements: new Map<number, Record<string, number | null>>(),
   scopeMeasurementsAt: 0,
+  scopeDelays: new Map<number, Record<string, number | null>>(),
+  /** Measurements limited to the span between the time cursors. */
+  gate: false,
+  /** What was last sent to the scope's gate: "off", "t1,t2", or null (never sent). */
+  scopeGate: null as string | null,
   fftOn: false,
   spectrum: null as Spectrum | null,
   /** Measurement log rows while logging, otherwise null. */
@@ -214,7 +219,7 @@ async function fetchFrame(): Promise<void> {
     end = Math.min(1, (plot.view.start + plot.view.span - record.start) / record.span);
     if (!(end > start)) [start, end] = [0, 1];
   }
-  const frame = await api.frame(points, start, end);
+  const frame = await api.frame(points, start, end, gateWindow());
   const previous = state.frame;
   if (previous && (previous.timePerDiv !== frame.timePerDiv || previous.triggerDelay !== frame.triggerDelay)) {
     setZoom(null);
@@ -318,15 +323,16 @@ function renderMeasurements(): void {
   table.innerHTML = `<thead><tr><th></th>${titles.map((h) => `<th>${h}</th>`).join("")}</tr></thead>`;
   const body = table.createTBody();
   let aliased = false;
+  const window = gateWindow();
   for (const wf of f.channels) {
     let cells: string[];
-    if (scope && wf.channel !== MATH_CHANNEL) {
+    if (scope && wf.channel !== MATH_CHANNEL && !isRef(wf.channel)) {
       const m = state.scopeMeasurements.get(wf.channel);
       cells = SCOPE_COLUMNS.map(([key, , fmt]) => (m?.[key] == null ? "—" : fmt(m[key]!)));
     } else if (scope) {
       cells = SCOPE_COLUMNS.map(() => "—");
     } else {
-      const m = measure(wf);
+      const m = measure(wf, window);
       aliased ||= m.aliased;
       cells = APP_COLUMNS.map(([, fn]) => fn(m, unitOf(wf)));
     }
@@ -334,21 +340,80 @@ function renderMeasurements(): void {
     row.innerHTML = `<th style="color:${channelColor(wf.channel)}">${channelName(wf.channel)}</th>${cells.map((c) => `<td>${c}</td>`).join("")}`;
   }
   el.replaceChildren(table);
+
+  // Delay and phase of every other channel relative to C1.
+  const c1 = f.channels.find((c) => c.channel === 1);
+  const others = f.channels.filter((c) => c.channel > 1 && !isRef(c.channel));
+  if (c1 && others.length) {
+    const delays = document.createElement("div");
+    delays.className = "delays";
+    for (const wf of others) {
+      let text: string;
+      if (scope) {
+        const d = state.scopeDelays.get(wf.channel);
+        text = d?.FRR == null && d?.PHA == null ? "—" : `delay ${d?.FRR == null ? "—" : si(d.FRR, "s", 4)}  ·  phase ${d?.PHA == null ? "—" : `${d.PHA.toFixed(1)}°`}`;
+      } else {
+        const d = delayBetween(c1, wf);
+        text = d ? `delay ${si(d.delay, "s", 4)}  ·  phase ${d.phase === null ? "—" : `${d.phase.toFixed(1)}°`}` : "—";
+      }
+      const item = document.createElement("span");
+      item.innerHTML = `<b style="color:${channelColor(1)}">C1</b> → <b style="color:${channelColor(wf.channel)}">${channelName(wf.channel)}</b> <span></span>`;
+      item.querySelector("span")!.textContent = text;
+      item.title = "Rising edge of C1 to the nearest rising edge of the other channel";
+      delays.append(item);
+    }
+    el.append(delays);
+  }
+
   if (aliased) {
     const note = document.createElement("p");
     note.className = "measure-note";
     note.textContent =
-      "Freq, Period, Duty: too many signal cycles for the transferred points. Use “Scope” measurements, more Points, zoom in, or a faster time/div.";
+      "Freq, Period, Duty: too many signal cycles even for the dense read. Use “Scope” measurements, zoom in, or a faster time/div.";
     el.append(note);
   }
 }
 
 async function refreshScopeMeasurements(): Promise<void> {
   state.scopeMeasurementsAt = performance.now();
-  for (const wf of state.frame?.channels ?? []) {
-    state.scopeMeasurements.set(wf.channel, await api.measurements(wf.channel));
+  await syncScopeGate();
+  const channels = (state.frame?.channels ?? []).map((c) => c.channel);
+  for (const ch of channels) state.scopeMeasurements.set(ch, await api.measurements(ch));
+  if (channels.includes(1)) {
+    for (const ch of channels.filter((c) => c > 1)) state.scopeDelays.set(ch, await api.delay(1, ch));
   }
 }
+
+// ---------- measurement gate ----------
+
+/** The time window measurements are limited to (between the X1 and X2 cursors), or null. */
+function gateWindow(): [number, number] | null {
+  if (!state.gate) return null;
+  const [a, b] = plot.cursors.t;
+  return a === b ? null : [Math.min(a, b), Math.max(a, b)];
+}
+
+/** Sends the gate to the scope when its own measurements are shown; switches the scope's gate off otherwise. */
+async function syncScopeGate(): Promise<void> {
+  const window = state.measureSource === "scope" ? gateWindow() : null;
+  const key = window ? window.join() : "off";
+  if (key === state.scopeGate || (key === "off" && state.scopeGate === null)) return;
+  await api.gate(window);
+  state.scopeGate = key;
+  state.scopeMeasurementsAt = 0;
+}
+
+$<HTMLInputElement>("gate").addEventListener("change", async (e) => {
+  state.gate = (e.target as HTMLInputElement).checked;
+  if (state.gate && !(plot.cursors.mode === "time" || plot.cursors.mode === "both")) {
+    // The gate is the span between the time cursors, so they must be visible.
+    if (plot.cursors.mode === "off") plot.resetCursors();
+    plot.cursors.mode = plot.cursors.mode === "volt" ? "both" : "time";
+    $<HTMLSelectElement>("cursor-mode").value = plot.cursors.mode;
+  }
+  await syncScopeGate().catch(handleError);
+  render();
+});
 
 document.querySelectorAll<HTMLButtonElement>("#measure-source button").forEach((b) =>
   b.addEventListener("click", async () => {
@@ -356,8 +421,11 @@ document.querySelectorAll<HTMLButtonElement>("#measure-source button").forEach((
     document.querySelectorAll("#measure-source button").forEach((x) => x.classList.toggle("active", x === b));
     if (state.measureSource === "scope") {
       state.scopeMeasurements.clear();
+      state.scopeDelays.clear();
       state.scopeMeasurementsAt = 0;
       if (!state.live && state.connected) await refreshScopeMeasurements().catch(handleError);
+    } else {
+      await syncScopeGate().catch(handleError);
     }
     render();
   }),
@@ -1208,6 +1276,8 @@ canvas.addEventListener("pointerup", (e) => {
     const t1 = plot.timeAtX(Math.max(zoomFrom, x));
     setZoom({ start: t0, span: t1 - t0 });
   }
+  // A moved time cursor moves the measurement gate on the scope too.
+  if (dragging?.kind === "t" && state.gate) syncScopeGate().catch(handleError);
   dragging = null;
   zoomFrom = null;
   plot.selection = null;

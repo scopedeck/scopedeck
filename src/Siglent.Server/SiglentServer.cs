@@ -106,8 +106,19 @@ public static class SiglentServer
         api.MapGet("/settings", (ScopeService scope, CancellationToken ct) =>
             scope.RunAsync(s => s.GetSettingsAsync(ct)));
 
-        api.MapGet("/frame", (ScopeService scope, int? maxPoints, double? start, double? end, CancellationToken ct) =>
-            scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1, ct)));
+        api.MapGet("/frame", (ScopeService scope, int? maxPoints, double? start, double? end, double? gateStart, double? gateEnd, CancellationToken ct) =>
+            scope.RunAsync(s => s.GetFrameAsync(Math.Clamp(maxPoints ?? 2000, 100, 100_000), start ?? 0, end ?? 1,
+                gateStart is { } gs && gateEnd is { } ge ? (gs, ge) : null, ct)));
+
+        api.MapPost("/gate", async (GateRequest request, ScopeService scope, CancellationToken ct) =>
+        {
+            await scope.RunAsync(s => s.SetMeasurementGateAsync(
+                request.Start is { } a && request.End is { } b ? (a, b) : null, ct));
+            return Results.NoContent();
+        });
+
+        api.MapGet("/delay", (ScopeService scope, int a, int b, CancellationToken ct) =>
+            scope.RunAsync(s => s.GetDelayAsync(a, b, ct)));
 
         api.MapGet("/measurements/{channel:int}", (int channel, ScopeService scope, CancellationToken ct) =>
             scope.RunAsync(s => s.GetMeasurementsAsync(channel, ct)));
@@ -258,4 +269,6 @@ public static class SiglentServer
 public record ConnectRequest(string Host, int? Port);
 public record ScpiRequest(string Command);
 public record HistoryRequest(bool Enabled);
+/// <summary>Both times set: gate on (seconds relative to the trigger); otherwise gate off.</summary>
+public record GateRequest(double? Start, double? End);
 public record HistoryFrameRequest(int Frame);

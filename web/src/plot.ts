@@ -309,6 +309,27 @@ export class ScopePlot {
     }
     const scale = a.h / V_DIVS / wf.voltsPerDiv;
     const cy = a.y + a.h / 2;
+    if (wf.min && wf.max) {
+      // Envelope: the band between the smallest and largest value of each interval, like the scope's display.
+      // A smooth signal gives a thin band that looks like a line; many cycles per pixel fill the true span.
+      const { min, max } = wf;
+      ctx.beginPath();
+      for (let i = first; i <= last; i++) {
+        const x = this.xOfTime(wf.firstPointTime + i * wf.sampleInterval);
+        const y = cy - (max[i] + wf.offset) * scale;
+        if (i === first) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      for (let i = last; i >= first; i--) {
+        ctx.lineTo(this.xOfTime(wf.firstPointTime + i * wf.sampleInterval), cy - (min[i] + wf.offset) * scale);
+      }
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     for (let i = first; i <= last; i++) {
       const x = this.xOfTime(wf.firstPointTime + i * wf.sampleInterval);

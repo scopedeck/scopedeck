@@ -449,3 +449,7 @@ a.link-btn { margin-right: auto; align-self: center; font-size: 13px; color: var
 .pair:has(> #trig-source[hidden]) { grid-template-columns: 1fr; }
 .type-pair { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .hint { margin: 0; font-size: 12px; color: var(--muted); }
+.gate-toggle { margin-left: 12px; font-size: 13px; }
+.gate-toggle input { accent-color: var(--accent); }
+.delays { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 2px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.delays span span { color: var(--text); }

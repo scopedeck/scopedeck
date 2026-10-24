@@ -32,8 +32,12 @@ No NI-VISA and no LabVIEW driver are needed: the scope accepts plain SCPI over a
 - **Cursors**: draggable time (X1/X2) and voltage (Y1/Y2) cursors with ΔT, 1/ΔT, ΔV and each channel's value at X1/X2
 - **FFT**: spectrum of any channel in dBV (RMS), Hann / Hamming / Blackman-Harris / flat-top / rectangular window,
   span zoom, peak marker, hover readout. Resolution follows the *Points* setting (20k points → finer RBW, higher Nyquist)
+- **Envelope display**: up to 200k samples per channel are read and drawn as a min/max band, so slow timebases show
+  the true signal band instead of aliased sample skipping; app measurements use the dense record
 - **Measurements** by the app (every frame: frequency, period, Vpp, max, min, mean, RMS, duty) or by the scope
-  itself (`PAVA? ALL`, full memory: adds amplitude, rise/fall time, pulse width, overshoot; refreshed every 2 s)
+  itself (`PAVA? ALL`, full memory: adds amplitude, rise/fall time, pulse width, overshoot; refreshed every 2 s).
+  *Between cursors X1–X2* limits both to a time window (the scope's measurement gate `MEGS`/`MEGA`/`MEGB`), and the
+  delay and phase between channels are shown below the table (app: rising-edge timing; scope: `MEAD? PHA`/`FRR`)
 - **Capture memory**: the complete acquisition (up to 14 Mpts per channel) as CSV. A running scope is paused
   for the transfer (~4 s for 7 Mpts) and then resumed
 - **Log**: records measurements of every frame; click again to stop and download the CSV
@@ -130,6 +134,9 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 - The math display can be switched on (`MATH:TRA ON`) but not off again (`MATH:TRA OFF` is ignored, `MATH:TRA?` gets no
   answer), which is why ScopeDeck computes math itself.
 - `SCDP` returns an 800×480 RGB565 BMP (top-down, BI_BITFIELDS) followed by one extra `\n` byte.
+- **Measurement gate:** `MEGS ON`, `MEGA <t>`, `MEGB <t>` (times relative to the trigger) limit `PAVA?` to a window;
+  `MEGS?` never answers and `MEGA`/`MEGB` are write-only, so ScopeDeck remembers the gate and switches it off on
+  disconnect. `C1-C2:MEAD? PHA` / `FRR` take ~0.2 s each and answer `****` when a channel has no signal.
 
 ## Related projects
 
