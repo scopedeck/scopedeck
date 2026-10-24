@@ -443,3 +443,9 @@ button.danger-outline { border-color: color-mix(in srgb, var(--danger) 60%, var(
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 a.link-btn { margin-right: auto; align-self: center; font-size: 13px; color: var(--accent); }
 .dialog-actions { align-items: center; }
+#trig-source[hidden] { display: none; }
+#trig-line { width: 70px; flex: 1; }
+#trig-field { flex: none; width: 52px; padding-left: 4px; padding-right: 2px; }
+.pair:has(> #trig-source[hidden]) { grid-template-columns: 1fr; }
+.type-pair { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.hint { margin: 0; font-size: 12px; color: var(--muted); }

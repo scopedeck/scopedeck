@@ -115,6 +115,13 @@ Tests: `dotnet test` (unit tests plus end-to-end tests against the simulator).
 - Peak detect forces 7M memory; high-res allows at most 700K; 7M is refused in average mode.
 - `TRSE <type>,SR,<src>` with only the source keeps the existing condition; changing the type needs a full
   `HT`/`HV`/`HV2` set valid for that type.
+- **Window and pattern triggers are not in the guide:** `TRSE WIN,SR,C1` and `TRSE PA` work; `TRSE?` then answers only
+  `WIN` / `PA` (no source). The window limits are `TRLV` (upper) and `TRLV2` (lower). Pattern states and logic use
+  `TRPA C1,H,C2,L,STATE,NOR` (AND/OR/NAND/NOR). `TRWI` can only be set while the window trigger is active.
+- **Unanswered queries by trigger type:** `TRSL?` gets no answer in window, pattern and video mode; `TRLV?`, `TRLV2?`
+  and `TRCP?` none in pattern and video mode. ScopeDeck only asks what a type supports.
+- After a trigger type change, the next `TRSE` within about a second can be ignored: coming back from window mode to
+  edge kept the old source. ScopeDeck re-reads `TRSE?` after a type change and resends once if needed.
 - `PNSU?` returns the setup as XML (~45 KB) on this 2-channel model (the guide says binary). Loading it back works, but
   two `unit_type` fields of display values came back different.
 - `WFSU FP,n` selects the first transferred sample; together with `SP` and `NP` any slice of the record can be read.

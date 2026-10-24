@@ -28,11 +28,11 @@ public sealed record ChannelSettings(
     string Unit,
     double Skew);
 
-/// <param name="Type">EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout) or TV.</param>
+/// <param name="Type">EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout), WIN (window), PA (pattern) or TV.</param>
 /// <param name="HoldType">Condition: OFF/TI (edge holdoff, dropout time), PS/PL/P2/P1 (pulse, runt), IS/IL/I2/I1 (slope, interval).</param>
 /// <param name="HoldValue">Holdoff or condition time in seconds; the lower limit for range conditions.</param>
 /// <param name="HoldValue2">Upper limit for range conditions (P2/P1/I2/I1).</param>
-/// <param name="Level2">Lower trigger level (slope and runt triggers).</param>
+/// <param name="Level2">Lower trigger level (slope, runt and window triggers).</param>
 public sealed record TriggerSettings(
     string Mode,
     string Type,
@@ -43,7 +43,19 @@ public sealed record TriggerSettings(
     string? HoldType,
     double? HoldValue,
     double? HoldValue2,
-    double? Level2);
+    double? Level2,
+    VideoTrigger? Video = null,
+    PatternTrigger? Pattern = null);
+
+/// <param name="Standard">NTSC, PAL, 720P/50, 720P/60, 1080P/50, 1080P/60, 1080I/50 or 1080I/60.</param>
+/// <param name="Sync">ANY (every line) or SELECT (the given line and field).</param>
+/// <param name="Field">1 or 2 for interlaced standards.</param>
+public sealed record VideoTrigger(string Standard, string Sync, int? Line, int? Field);
+
+/// <param name="States">Per channel: H (above its threshold), L (below) or X (ignored).</param>
+/// <param name="Logic">AND, OR, NAND or NOR.</param>
+/// <remarks>The channel thresholds are set on the scope: in pattern mode it answers no level queries.</remarks>
+public sealed record PatternTrigger(IReadOnlyDictionary<string, string> States, string Logic);
 
 /// <param name="Mode">SAMPLING, PEAK_DETECT, AVERAGE or HIGH_RES.</param>
 /// <param name="MemoryDepth">As the scope reports it: 7K…7M with two channels, 14K…14M with one.</param>
@@ -113,4 +125,10 @@ public sealed record TriggerUpdate(
     string? HoldType = null,
     double? HoldValue = null,
     double? HoldValue2 = null,
-    double? Level2 = null);
+    double? Level2 = null,
+    string? VideoStandard = null,
+    string? VideoSync = null,
+    int? VideoLine = null,
+    int? VideoField = null,
+    IReadOnlyDictionary<string, string>? PatternStates = null,
+    string? PatternLogic = null);

@@ -194,7 +194,7 @@
           <h2>Trigger</h2>
           <div class="row">
             <label for="trig-type">Type</label>
-            <div class="pair">
+            <div class="pair type-pair">
               <select id="trig-type" title="Trigger type">
                 <option value="EDGE">Edge</option>
                 <option value="GLIT">Pulse</option>
@@ -202,13 +202,15 @@
                 <option value="INTV">Interval</option>
                 <option value="RUNT">Runt</option>
                 <option value="DROP">Dropout</option>
-                <option value="TV" disabled>Video</option>
+                <option value="WIN">Window</option>
+                <option value="PA">Pattern</option>
+                <option value="TV">Video</option>
               </select>
               <select id="trig-source" title="Source"></select>
             </div>
           </div>
-          <div class="row">
-            <label for="trig-slope">Edge</label>
+          <div class="row" id="trig-edge-row">
+            <label for="trig-slope" id="trig-slope-label">Edge</label>
             <div class="pair">
               <select id="trig-slope" title="Slope / polarity">
                 <option value="POS">Rising</option>
@@ -223,12 +225,12 @@
               </select>
             </div>
           </div>
-          <div class="row">
+          <div class="row" id="trig-level-row">
             <label for="trig-level" id="trig-level-label">Level</label>
             <div class="unit-input"><input id="trig-level" type="number" step="any" /><span>V</span><button id="set50-btn" class="mini" title="Set the level to the middle of the signal">50%</button></div>
           </div>
           <div class="row" id="trig-level2-row" hidden>
-            <label for="trig-level2">Low level</label>
+            <label for="trig-level2" id="trig-level2-label">Low level</label>
             <div class="unit-input"><input id="trig-level2" type="number" step="any" /><span>V</span></div>
           </div>
           <div class="row" id="trig-holdoff-row">
@@ -243,6 +245,43 @@
             <label for="trig-time" id="trig-time-label">Time</label>
             <div class="unit-input"><input id="trig-time" type="number" step="any" min="0" /><span id="trig-time2-sep" hidden>…</span><input id="trig-time2" type="number" step="any" min="0" hidden /><span>s</span></div>
           </div>
+          <div class="row" id="trig-video-row" hidden>
+            <label for="trig-standard">Standard</label>
+            <select id="trig-standard">
+              <option value="NTSC">NTSC</option>
+              <option value="PAL">PAL</option>
+              <option value="720P/50">720p/50</option>
+              <option value="720P/60">720p/60</option>
+              <option value="1080P/50">1080p/50</option>
+              <option value="1080P/60">1080p/60</option>
+              <option value="1080I/50">1080i/50</option>
+              <option value="1080I/60">1080i/60</option>
+            </select>
+          </div>
+          <div class="row" id="trig-line-row" hidden>
+            <label for="trig-sync">Line</label>
+            <div class="pair">
+              <select id="trig-sync" title="Trigger on every line or on one line">
+                <option value="ANY">Any</option>
+                <option value="SELECT">One</option>
+              </select>
+              <div class="unit-input">
+                <input id="trig-line" type="number" min="1" step="1" title="Line number" />
+                <select id="trig-field" title="Field (interlaced standards)"><option value="1">F1</option><option value="2">F2</option></select>
+              </div>
+            </div>
+          </div>
+          <div id="trig-pattern" hidden></div>
+          <div class="row" id="trig-logic-row" hidden>
+            <label for="trig-logic">Logic</label>
+            <select id="trig-logic">
+              <option value="AND">AND — all match</option>
+              <option value="OR">OR — any matches</option>
+              <option value="NAND">NAND — not all</option>
+              <option value="NOR">NOR — none</option>
+            </select>
+          </div>
+          <p class="hint" id="trig-pattern-hint" hidden>Channel thresholds are set on the scope.</p>
         </section>
 
         <div id="channels"></div>

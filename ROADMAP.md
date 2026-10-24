@@ -21,10 +21,16 @@ ScopeDeck does not use yet. Options that a 2-channel SDS1202X-E does not have (d
 - **References** — R1–R4 frozen from a trace or loaded from a CSV export (app-side).
 - **XY mode and persistence** — drawn in the app.
 
+## Done in RC 5
+
+- **Video trigger** — standard, any line or a chosen line and field (`TRSE TV`).
+- **Window trigger** — upper/lower limits (`TRSE WIN`, `TRLV`, `TRLV2`; not in the guide).
+- **Pattern trigger** — high/low/don't care per channel, AND/OR/NAND/NOR (`TRSE PA`, `TRPA`; thresholds stay on the scope).
+
 ## Next
 
-- **Video trigger** (`TRSE TV` with standard, sync, line, field) — currently shown but has to be set up on the scope.
-- **Window trigger** (`TRWI`) and pattern trigger.
+- **Envelope display for slow timebases** — min/max per screen column instead of sample skipping, so hundreds of
+  cycles on screen show the true signal band and app measurements keep working.
 
 ## Later
 

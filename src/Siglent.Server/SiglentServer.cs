@@ -65,7 +65,8 @@ public static class SiglentServer
             }
             catch (InvalidOperationException e)
             {
-                return Results.Problem(e.Message, statusCode: StatusCodes.Status409Conflict);
+                // Not 409: the UI treats 409 as "not connected".
+                return Results.Problem(e.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
             }
         });
 

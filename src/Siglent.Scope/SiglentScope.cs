@@ -11,7 +11,9 @@ public sealed class SiglentScope : IAsyncDisposable
     private static readonly HashSet<string> Couplings = ["A1M", "D1M", "GND"];
     private static readonly HashSet<string> Units = ["V", "A"];
     private static readonly HashSet<string> TriggerCouplings = ["AC", "DC", "HFREJ", "LFREJ"];
-    private static readonly HashSet<string> TriggerTypes = ["EDGE", "GLIT", "SLEW", "INTV", "RUNT", "DROP", "TV"];
+    // WIN and PA are not in the programming guide; FW 1.3.27 accepts and reports them (TRSE WIN, TRSE PA).
+    private static readonly HashSet<string> TriggerTypes = ["EDGE", "GLIT", "SLEW", "INTV", "RUNT", "DROP", "WIN", "PA", "TV"];
+    private static readonly HashSet<string> PatternLogics = ["AND", "OR", "NAND", "NOR"];
     private static readonly HashSet<string> AcquisitionModes = ["SAMPLING", "PEAK_DETECT", "AVERAGE", "HIGH_RES"];
     private static readonly HashSet<int> AverageCounts = [4, 16, 32, 64, 128, 256, 512, 1024];
     private static readonly HashSet<string> MemoryDepths = ["7K", "70K", "700K", "7M", "14K", "140K", "1.4M", "14M"];
@@ -94,15 +96,23 @@ public sealed class SiglentScope : IAsyncDisposable
             ScpiValue.ParseBool(await Q("SXSA?")));
 
         var trigger = ParseTrigger(ScpiValue.ParseList(await Q("TRSE?")), ScpiValue.StripHeader(await Q("TRMD?")));
-        if (trigger.Source.StartsWith('C') || trigger.Source.StartsWith("EX"))
+        if (trigger.Type == "WIN") trigger = trigger with { Source = _windowSource };
+        // FW 1.3.27 does not answer some queries in some trigger types (verified): TRSL? in window mode, and
+        // TRSL?/TRLV?/TRCP?/TRLV2? in pattern and video mode. Only ask what the type supports.
+        if (trigger.Type == "PA")
+        {
+            var (states, logic) = ParsePattern(await Q("TRPA?"));
+            trigger = trigger with { Pattern = new PatternTrigger(states, logic) };
+        }
+        else if (trigger.Type != "TV" && (trigger.Source.StartsWith('C') || trigger.Source.StartsWith("EX")))
         {
             var src = trigger.Source;
             trigger = trigger with
             {
-                Slope = ScpiValue.StripHeader(await Q($"{src}:TRSL?")),
+                Slope = trigger.Type == "WIN" ? null : ScpiValue.StripHeader(await Q($"{src}:TRSL?")),
                 Level = ScpiValue.ParseNumber(await Q($"{src}:TRLV?")),
                 Coupling = ScpiValue.StripHeader(await Q($"{src}:TRCP?")),
-                Level2 = trigger.Type is "SLEW" or "RUNT" && src.StartsWith('C')
+                Level2 = trigger.Type is "SLEW" or "RUNT" or "WIN" && src.StartsWith('C')
                     ? ScpiValue.ParseNumber(await Q($"{src}:TRLV2?"))
                     : null,
             };
@@ -125,6 +135,14 @@ public sealed class SiglentScope : IAsyncDisposable
     internal static TriggerSettings ParseTrigger(string[] trse, string mode)
     {
         string? hv = FindPair(trse, "HV"), hv2 = FindPair(trse, "HV2");
+        // TV,SR,C1,STAN,PAL,SYNC,SELECT,LINE,300,FLD,2
+        VideoTrigger? video = trse[0].Equals("TV", StringComparison.OrdinalIgnoreCase)
+            ? new VideoTrigger(
+                FindPair(trse, "STAN")?.ToUpperInvariant() ?? "NTSC",
+                FindPair(trse, "SYNC")?.ToUpperInvariant() ?? "ANY",
+                int.TryParse(FindPair(trse, "LINE"), out int line) ? line : null,
+                int.TryParse(FindPair(trse, "FLD"), out int field) ? field : null)
+            : null;
         return new TriggerSettings(
             mode,
             trse[0].ToUpperInvariant(),
@@ -135,10 +153,12 @@ public sealed class SiglentScope : IAsyncDisposable
             FindPair(trse, "HT")?.ToUpperInvariant(),
             hv is null ? null : ScpiValue.TryParseNumber(hv),
             hv2 is null ? null : ScpiValue.TryParseNumber(hv2),
-            Level2: null);
+            Level2: null,
+            Video: video);
     }
 
     private int _averages = 16;
+    private string _windowSource = "C1";
 
     // History: FRAM? returns the frame count only right after history is switched on, so it is
     // remembered (or probed) and forgotten when history is switched off.
@@ -304,8 +324,19 @@ public sealed class SiglentScope : IAsyncDisposable
     public Task UpdateTriggerAsync(TriggerUpdate update, CancellationToken ct = default) => Locked(async () =>
     {
         var current = ParseTrigger(ScpiValue.ParseList(await _scpi.QueryAsync("TRSE?", ct)), "");
-        if (BuildTriggerSelect(current, update) is { } trse) await _scpi.WriteAsync(trse, ct);
+        if (current.Type == "WIN") current = current with { Source = _windowSource };
         var source = update.Source?.Trim().ToUpperInvariant() ?? current.Source;
+        var type = update.Type?.Trim().ToUpperInvariant() ?? current.Type;
+        if (BuildTriggerSelect(current, update) is { } trse)
+        {
+            await _scpi.WriteAsync(trse, ct);
+            if (type != current.Type) await AwaitTriggerTypeAsync(trse, type, source, ct);
+        }
+        // TRSE? does not report a window trigger's source, so the one set here is remembered.
+        if (type == "WIN") _windowSource = source;
+
+        if (update.PatternStates is not null || update.PatternLogic is not null)
+            await _scpi.WriteAsync(BuildPattern(ParsePattern(await _scpi.QueryAsync("TRPA?", ct)), update), ct);
         if (update.Slope is { } slope) await _scpi.WriteAsync($"{source}:TRSL {Checked(slope, Slopes)}", ct);
         if (update.Coupling is { } cpl) await _scpi.WriteAsync($"{source}:TRCP {Checked(cpl, TriggerCouplings)}", ct);
         if (update.Level is { } level) await _scpi.WriteAsync($"{source}:TRLV {ScpiValue.Format(level, "V")}", ct);
@@ -315,26 +346,57 @@ public sealed class SiglentScope : IAsyncDisposable
     });
 
     /// <summary>
+    /// After a trigger type change the scope needs about a second before it applies the next TRSE: switching from
+    /// window or video back to edge kept the old source when the command came too soon (FW 1.3.27). Waits until
+    /// TRSE? reports the new type (and source, where reported) and sends the command once more if it does not.
+    /// </summary>
+    private async Task AwaitTriggerTypeAsync(string trse, string type, string source, CancellationToken ct)
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            for (int poll = 0; poll < 10; poll++)
+            {
+                var now = ParseTrigger(ScpiValue.ParseList(await _scpi.QueryAsync("TRSE?", ct)), "");
+                bool sourceKnown = type is not ("WIN" or "PA");
+                if (now.Type == type && (!sourceKnown || now.Source == source)) return;
+                await Task.Delay(150, ct);
+            }
+            await _scpi.WriteAsync(trse, ct);
+        }
+        throw new InvalidOperationException($"The scope did not switch to the {type} trigger.");
+    }
+
+    /// <summary>
     /// Builds the TRSE command for a trigger change, or null if type, source and condition are unchanged.
     /// A source-only change sends just the type and source, which keeps the condition (verified on hardware).
     /// </summary>
     internal static string? BuildTriggerSelect(TriggerSettings current, TriggerUpdate update)
     {
-        if (update.Type is null && update.Source is null && update.HoldType is null && update.HoldValue is null && update.HoldValue2 is null)
+        bool holdChange = update.HoldType is not null || update.HoldValue is not null || update.HoldValue2 is not null;
+        bool videoChange = update.VideoStandard is not null || update.VideoSync is not null || update.VideoLine is not null || update.VideoField is not null;
+        if (update.Type is null && update.Source is null && !holdChange && !videoChange)
             return null;
 
         string type = update.Type is { } t ? Checked(t, TriggerTypes) : current.Type;
+        bool typeChanged = type != current.Type;
+        if (videoChange && type != "TV") throw new ArgumentException("Video settings need the video trigger.");
+        if (holdChange && type is "WIN" or "PA" or "TV") throw new ArgumentException($"A {type} trigger has no time condition.");
+
+        // Pattern: the channels and logic are set with TRPA; TRSE only selects the type.
+        if (type == "PA") return typeChanged ? "TRSE PA" : null;
+
         string source = update.Source?.Trim().ToUpperInvariant() ?? current.Source;
         if (!System.Text.RegularExpressions.Regex.IsMatch(source, "^(C[1-4]|EX|EX5|LINE)$"))
             throw new ArgumentException($"Invalid trigger source '{source}'.");
         if (type != "EDGE" && !source.StartsWith('C'))
             throw new ArgumentException("LINE and external sources work only with the edge trigger.");
 
-        bool typeChanged = type != current.Type;
-        if (!typeChanged && update.HoldType is null && update.HoldValue is null && update.HoldValue2 is null)
+        // Window: the upper and lower limits are the trigger levels TRLV and TRLV2.
+        if (type == "WIN") return $"TRSE WIN,SR,{source}";
+        if (type == "TV") return BuildVideo(source, typeChanged ? null : current.Video, update);
+
+        if (!typeChanged && !holdChange)
             return $"TRSE {type},SR,{source}";
-        if (type == "TV")
-            throw new ArgumentException("Set up the video trigger on the scope.");
 
         var allowed = HoldTypes[type];
         string hold = update.HoldType is { } h ? h.Trim().ToUpperInvariant()
@@ -356,6 +418,63 @@ public sealed class SiglentScope : IAsyncDisposable
         }
         return command;
     }
+
+    /// <summary>Line counts per standard: field 1 and field 2 for interlaced standards.</summary>
+    private static readonly Dictionary<string, int[]> VideoLines = new()
+    {
+        ["NTSC"] = [263, 262],
+        ["PAL"] = [313, 312],
+        ["720P/50"] = [750],
+        ["720P/60"] = [750],
+        ["1080P/50"] = [1125],
+        ["1080P/60"] = [1125],
+        ["1080I/50"] = [563, 562],
+        ["1080I/60"] = [563, 562],
+    };
+
+    /// <summary>TRSE TV,SR,C1,STAN,PAL,SYNC,SELECT,LINE,300,FLD,2 — unspecified values keep the current ones.</summary>
+    private static string BuildVideo(string source, VideoTrigger? current, TriggerUpdate u)
+    {
+        string standard = (u.VideoStandard ?? current?.Standard ?? "NTSC").Trim().ToUpperInvariant();
+        if (!VideoLines.TryGetValue(standard, out var lines)) throw new ArgumentException($"Unsupported video standard '{standard}'.");
+        string sync = (u.VideoSync ?? current?.Sync ?? "ANY").Trim().ToUpperInvariant();
+        if (sync is not ("ANY" or "SELECT")) throw new ArgumentException("Video sync must be ANY or SELECT.");
+
+        var command = $"TRSE TV,SR,{source},STAN,{standard},SYNC,{sync}";
+        if (sync == "ANY") return command;
+
+        bool interlaced = lines.Length == 2;
+        int field = interlaced ? u.VideoField ?? current?.Field ?? 1 : 1;
+        if (field is < 1 or > 2) throw new ArgumentException("The video field must be 1 or 2.");
+        int max = lines[interlaced ? field - 1 : 0];
+        int line = u.VideoLine ?? Math.Min(current?.Line ?? 1, max);
+        if (line < 1 || line > max) throw new ArgumentException($"Line must be 1–{max} for {standard}{(interlaced ? $" field {field}" : "")}.");
+        return command + $",LINE,{line}" + (interlaced ? $",FLD,{field}" : "");
+    }
+
+    /// <summary>TRPA? → "C1,H,C2,L,STATE,AND".</summary>
+    internal static (Dictionary<string, string> States, string Logic) ParsePattern(string response)
+    {
+        var list = ScpiValue.ParseList(response);
+        var states = new Dictionary<string, string>();
+        for (int i = 0; i + 1 < list.Length; i += 2)
+            if (list[i].StartsWith('C')) states[list[i].ToUpperInvariant()] = list[i + 1].ToUpperInvariant();
+        return (states, (FindPair(list, "STATE") ?? "AND").ToUpperInvariant());
+    }
+
+    internal static string BuildPattern((Dictionary<string, string> States, string Logic) current, TriggerUpdate u)
+    {
+        var states = new Dictionary<string, string>(current.States);
+        foreach (var (ch, state) in u.PatternStates ?? new Dictionary<string, string>())
+        {
+            var s = state.Trim().ToUpperInvariant();
+            if (s is not ("H" or "L" or "X")) throw new ArgumentException($"Pattern state must be H, L or X, not '{state}'.");
+            states[ch.Trim().ToUpperInvariant()] = s;
+        }
+        string logic = Checked(u.PatternLogic ?? current.Logic, PatternLogics);
+        return "TRPA " + string.Join(",", states.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key},{kv.Value}")) + $",STATE,{logic}";
+    }
+
 
     private static double DefaultHoldValue(string type) => type switch
     {

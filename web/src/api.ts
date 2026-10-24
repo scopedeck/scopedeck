@@ -30,7 +30,7 @@ export interface ChannelSettings {
 }
 
 /**
- * type: EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout) or TV.
+ * type: EDGE, GLIT (pulse), SLEW, INTV (interval), RUNT, DROP (dropout), WIN (window), PA (pattern) or TV.
  * holdType: OFF/TI (edge holdoff, dropout), PS/PL/P2/P1 (pulse, runt), IS/IL/I2/I1 (slope, interval).
  */
 export interface TriggerSettings {
@@ -44,6 +44,9 @@ export interface TriggerSettings {
   holdValue: number | null;
   holdValue2: number | null;
   level2: number | null;
+  video: { standard: string; sync: string; line: number | null; field: number | null } | null;
+  /** states per channel: H, L or X. The thresholds are set on the scope. */
+  pattern: { states: Record<string, string>; logic: string } | null;
 }
 
 export interface AcquisitionSettings {
@@ -92,11 +95,17 @@ export interface WaveformFrame {
 }
 
 export type ChannelUpdate = Partial<Omit<ChannelSettings, "channel">>;
-export type TriggerUpdate = Partial<Omit<TriggerSettings, "level" | "holdValue" | "holdValue2" | "level2">> & {
+export type TriggerUpdate = Partial<Omit<TriggerSettings, "level" | "holdValue" | "holdValue2" | "level2" | "video" | "pattern">> & {
   level?: number;
   holdValue?: number;
   holdValue2?: number;
   level2?: number;
+  videoStandard?: string;
+  videoSync?: string;
+  videoLine?: number;
+  videoField?: number;
+  patternStates?: Record<string, string>;
+  patternLogic?: string;
 };
 export type AcquisitionUpdate = Partial<AcquisitionSettings>;
 

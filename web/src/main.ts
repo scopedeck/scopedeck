@@ -852,13 +852,38 @@ const isRange = (hold: string | null) => hold !== null && ["P2", "P1", "I2", "I1
 function renderTrigger(t: TriggerSettings): void {
   setSelect($("trig-type"), t.type);
   setSelect($("trig-source"), t.source);
+  // Which rows a trigger type uses: pattern has no single source; window and video have no slope.
+  const isPattern = t.type === "PA";
+  const isVideo = t.type === "TV";
+  const isWindow = t.type === "WIN";
+  $("trig-source").hidden = isPattern;
+  $("trig-edge-row").hidden = isPattern || isVideo || isWindow;
+  $("trig-level-row").hidden = isPattern || isVideo;
   if (t.slope) setSelect($("trig-slope"), t.slope);
   if (t.coupling) setSelect($("trig-coupling"), t.coupling);
+  $("trig-slope-label").textContent = t.type === "EDGE" ? "Edge" : "Polarity";
   setInput($("trig-level"), t.level);
-  $("trig-level-label").textContent = t.type === "SLEW" || t.type === "RUNT" ? "High level" : "Level";
-  $("trig-level2-row").hidden = !(t.type === "SLEW" || t.type === "RUNT");
+  const twoLevels = t.type === "SLEW" || t.type === "RUNT" || isWindow;
+  $("trig-level-label").textContent = isWindow ? "Upper" : twoLevels ? "High level" : "Level";
+  $("trig-level2-label").textContent = isWindow ? "Lower" : "Low level";
+  $("trig-level2-row").hidden = !twoLevels;
   setInput($("trig-level2"), t.level2);
   $("set50-btn").hidden = t.type !== "EDGE";
+
+  $("trig-video-row").hidden = $("trig-line-row").hidden = !isVideo;
+  if (t.video) {
+    setSelect($("trig-standard"), t.video.standard);
+    setSelect($("trig-sync"), t.video.sync);
+    const select = t.video.sync === "SELECT";
+    $("trig-line").hidden = !select;
+    setInput($("trig-line"), t.video.line);
+    // Only interlaced standards have two fields.
+    $("trig-field").hidden = !select || !["NTSC", "PAL", "1080I/50", "1080I/60"].includes(t.video.standard);
+    if (t.video.field) setSelect($("trig-field"), String(t.video.field));
+  }
+
+  $("trig-pattern").hidden = $("trig-logic-row").hidden = $("trig-pattern-hint").hidden = !isPattern;
+  if (t.pattern) renderPattern(t.pattern);
 
   $("trig-holdoff-row").hidden = t.type !== "EDGE";
   setInput($("trig-holdoff"), t.type === "EDGE" && t.holdType === "TI" ? t.holdValue : null);
@@ -884,6 +909,49 @@ function renderTrigger(t: TriggerSettings): void {
 
 $<HTMLSelectElement>("trig-type").addEventListener("change", (e) =>
   act(() => api.trigger({ type: (e.target as HTMLSelectElement).value })),
+);
+
+/** One row per channel: high / low / don't care. Thresholds are set on the scope (it reports none in pattern mode). */
+function renderPattern(p: NonNullable<TriggerSettings["pattern"]>): void {
+  const box = $("trig-pattern");
+  if (box.dataset.channels !== String(state.channelCount)) {
+    box.dataset.channels = String(state.channelCount);
+    box.replaceChildren(
+      ...Array.from({ length: state.channelCount }, (_, i) => {
+        const ch = `C${i + 1}`;
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `<label style="color:${channelColor(i + 1)}">${ch}</label>
+          <select data-ch="${ch}" data-f="state" title="High or low compared with the channel's threshold, or don't care">
+            <option value="H">High</option><option value="L">Low</option><option value="X">Don't care</option>
+          </select>`;
+        row.querySelector("select")!.addEventListener("change", (e) =>
+          act(() => api.trigger({ patternStates: { [ch]: (e.target as HTMLSelectElement).value } })),
+        );
+
+        return row;
+      }),
+    );
+  }
+  box.querySelectorAll<HTMLSelectElement>("select[data-f=state]").forEach((s) => setSelect(s, p.states[s.dataset.ch!] ?? "X"));
+
+  setSelect($("trig-logic"), p.logic);
+}
+
+$<HTMLSelectElement>("trig-logic").addEventListener("change", (e) =>
+  act(() => api.trigger({ patternLogic: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLSelectElement>("trig-standard").addEventListener("change", (e) =>
+  act(() => api.trigger({ type: "TV", videoStandard: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLSelectElement>("trig-sync").addEventListener("change", (e) =>
+  act(() => api.trigger({ type: "TV", videoSync: (e.target as HTMLSelectElement).value })),
+);
+$<HTMLInputElement>("trig-line").addEventListener("change", (e) =>
+  act(() => api.trigger({ type: "TV", videoLine: Math.round(Number((e.target as HTMLInputElement).value)) })),
+);
+$<HTMLSelectElement>("trig-field").addEventListener("change", (e) =>
+  act(() => api.trigger({ type: "TV", videoField: Number((e.target as HTMLSelectElement).value) })),
 );
 $<HTMLSelectElement>("trig-cond").addEventListener("change", (e) =>
   act(() => api.trigger({ holdType: (e.target as HTMLSelectElement).value })),

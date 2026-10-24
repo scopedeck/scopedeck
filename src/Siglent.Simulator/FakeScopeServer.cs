@@ -28,21 +28,23 @@ public sealed class FakeScopeServer : IAsyncDisposable
     private bool _headers = true;
     private int _sp, _np, _fp;
     private bool _history;
+    private string _video = "STAN,NTSC,SYNC,ANY";
+    private string _pattern = "C1,X,C2,X,STATE,AND";
     private int _frame;
     private Settings _s = Settings.Default;
 
-    private sealed record Channel(bool On, double Vdiv, double Ofst, double Attn, string Cpl = "D1M", bool Bwl = false, bool Inv = false, string Unit = "V", double Skew = 0);
+    private sealed record Channel(bool On, double Vdiv, double Ofst, double Attn, string Cpl = "D1M", bool Bwl = false, bool Inv = false, string Unit = "V", double Skew = 0, double TrigLevel = 0);
 
     /// <summary>Everything a panel setup (PNSU / *SAV) stores.</summary>
     private sealed record Settings(
         double Tdiv, double Trdl, string Trmd,
         string TrigType, string TrigSource, string HoldType, double HoldValue, double HoldValue2,
-        string TrigSlope, string TrigCoupling, double TrigLevel, double TrigLevel2,
+        string TrigSlope, string TrigCoupling, double TrigLevel2,
         string AcqMode, int Averages, string MemoryDepth, bool SinX,
         Channel[] Channels)
     {
         public static Settings Default => new(
-            200e-6, 0, "AUTO", "EDGE", "C1", "OFF", 0, 0, "POS", "DC", 0, -0.5,
+            200e-6, 0, "AUTO", "EDGE", "C1", "OFF", 0, 0, "POS", "DC", -0.5,
             "SAMPLING", 16, "700K", true, [new(true, 1, 0, 1), new(true, 1, -1.5, 1)]);
     }
 
@@ -142,9 +144,11 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "TRMD?": return Line("TRMD", _s.Trmd);
                 case "STOP": _s = _s with { Trmd = "STOP" }; return null;
                 case "ASET": _s = Settings.Default; return null;
-                case "SET50": _s = _s with { TrigLevel = _s.TrigSource == "C2" ? 1.65 : 0 }; return null;
+                case "SET50" when _s.TrigSource is "C1" or "C2": SetChannel(_s.TrigSource[1] - '0', _s.Channels[_s.TrigSource[1] - '1'] with { TrigLevel = _s.TrigSource == "C2" ? 1.65 : 0 }); return null;
                 case "TRSE": SetTrigger(arg); return null;
                 case "TRSE?": return Line("TRSE", TriggerText());
+                case "TRPA": _pattern = arg.ToUpperInvariant().Replace(" ", ""); return null;
+                case "TRPA?": return Line("TRPA", _pattern);
                 case "ACQW":
                     var acqw = arg.Split(',', StringSplitOptions.TrimEntries);
                     _s = _s with { AcqMode = acqw[0].ToUpperInvariant(), Averages = acqw.Length > 1 ? int.Parse(acqw[1]) : _s.Averages };
@@ -191,6 +195,10 @@ public sealed class FakeScopeServer : IAsyncDisposable
             }
 
             if (ch == 0) return null;
+            // Like FW 1.3.27: no answer to slope queries in window, pattern and video mode, nor to level and
+            // coupling queries in pattern and video mode.
+            if (head == "TRSL?" && _s.TrigType is "WIN" or "PA" or "TV") return null;
+            if (head is "TRLV?" or "TRLV2?" or "TRCP?" && _s.TrigType is "PA" or "TV") return null;
             var c = _s.Channels[ch - 1];
             string prefix = $"C{ch}:";
             switch (head)
@@ -215,8 +223,8 @@ public sealed class FakeScopeServer : IAsyncDisposable
                 case "TRSL?": return Line(prefix + "TRSL", _s.TrigSlope);
                 case "TRCP": _s = _s with { TrigCoupling = arg.ToUpperInvariant() }; return null;
                 case "TRCP?": return Line(prefix + "TRCP", _s.TrigCoupling);
-                case "TRLV": _s = _s with { TrigLevel = ParseVolts(arg) }; return null;
-                case "TRLV?": return Line(prefix + "TRLV", E(_s.TrigLevel) + "V");
+                case "TRLV": SetChannel(ch, c with { TrigLevel = ParseVolts(arg) }); return null;
+                case "TRLV?": return Line(prefix + "TRLV", E(c.TrigLevel) + "V");
                 case "TRLV2": _s = _s with { TrigLevel2 = ParseVolts(arg) }; return null;
                 case "TRLV2?": return Line(prefix + "TRLV2", E(_s.TrigLevel2) + "V");
                 case "WF?": return Waveform(ch);
@@ -237,7 +245,9 @@ public sealed class FakeScopeServer : IAsyncDisposable
     private void SetTrigger(string arg)
     {
         var p = arg.Split(',', StringSplitOptions.TrimEntries);
-        var s = _s with { TrigType = p[0].ToUpperInvariant() };
+        var type = p[0].ToUpperInvariant() switch { "WINDOW" or "WINDOWS" => "WIN", "PATTERN" or "PATT" or "PAT" => "PA", var t => t };
+        var s = _s with { TrigType = type };
+        if (type == "TV") _video = string.Join(',', p.Skip(3)).ToUpperInvariant();
         for (int i = 1; i + 1 < p.Length; i += 2)
         {
             switch (p[i].ToUpperInvariant())
@@ -253,6 +263,9 @@ public sealed class FakeScopeServer : IAsyncDisposable
 
     private string TriggerText()
     {
+        // Like FW 1.3.27: window and pattern triggers are reported without their parameters.
+        if (_s.TrigType is "WIN" or "PA") return _s.TrigType;
+        if (_s.TrigType == "TV") return $"TV,SR,{_s.TrigSource},{_video}";
         var text = $"{_s.TrigType},SR,{_s.TrigSource},HT,{_s.HoldType}";
         if (_s.HoldType != "OFF") text += $",HV,{E(_s.HoldValue)}s";
         if (_s.HoldType is "P2" or "P1" or "I2" or "I1") text += $",HV2,{E(_s.HoldValue2)}s";

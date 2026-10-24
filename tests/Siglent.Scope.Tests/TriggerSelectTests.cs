@@ -48,11 +48,47 @@ public class TriggerSelectTests
     [InlineData("GLIT", "LINE", null, null, null)] // line/external sources only for edge
     [InlineData(null, null, "PS", null, null)]     // pulse condition on an edge trigger
     [InlineData("GLIT", null, "P2", 2e-4, 1e-4)]  // upper limit below lower limit
-    [InlineData("TV", null, null, null, null)]     // video trigger is set up on the scope
     [InlineData("FOO", null, null, null, null)]
     public void RejectsInvalidCombinations(string? type, string? source, string? hold, double? hv, double? hv2) =>
         Assert.Throws<ArgumentException>(() => SiglentScope.BuildTriggerSelect(
             Current("EDGE,SR,C1,HT,OFF"), new TriggerUpdate(Type: type, Source: source, HoldType: hold, HoldValue: hv, HoldValue2: hv2)));
+
+    [Fact]
+    public void WindowAndPatternUseTheirOwnSyntax()
+    {
+        var edge = Current("EDGE,SR,C1,HT,OFF");
+        Assert.Equal("TRSE WIN,SR,C2", SiglentScope.BuildTriggerSelect(edge, new TriggerUpdate(Type: "WIN", Source: "C2")));
+        Assert.Equal("TRSE PA", SiglentScope.BuildTriggerSelect(edge, new TriggerUpdate(Type: "PA")));
+        // Already a pattern trigger: nothing to select again (channels and logic go through TRPA).
+        Assert.Null(SiglentScope.BuildTriggerSelect(Current("PA"), new TriggerUpdate(PatternLogic: "OR")));
+    }
+
+    [Theory]
+    [InlineData("EDGE,SR,C1,HT,OFF", null, null, null, null, "TRSE TV,SR,C1,STAN,NTSC,SYNC,ANY")]
+    [InlineData("TV,SR,C1,STAN,NTSC,SYNC,ANY", "PAL", "SELECT", 300, 2, "TRSE TV,SR,C1,STAN,PAL,SYNC,SELECT,LINE,300,FLD,2")]
+    [InlineData("TV,SR,C1,STAN,PAL,SYNC,SELECT,LINE,300,FLD,2", "1080P/50", null, null, null, "TRSE TV,SR,C1,STAN,1080P/50,SYNC,SELECT,LINE,300")]
+    [InlineData("TV,SR,C1,STAN,1080P/50,SYNC,SELECT,LINE,1000", "NTSC", null, null, null, "TRSE TV,SR,C1,STAN,NTSC,SYNC,SELECT,LINE,263,FLD,1")]
+    public void BuildsVideoTriggers(string trse, string? standard, string? sync, int? line, int? field, string expected) =>
+        Assert.Equal(expected, SiglentScope.BuildTriggerSelect(Current(trse),
+            new TriggerUpdate(Type: "TV", VideoStandard: standard, VideoSync: sync, VideoLine: line, VideoField: field)));
+
+    [Theory]
+    [InlineData("TV", "PAL", "SELECT", 400, 1)]   // PAL field 1 has 313 lines
+    [InlineData("TV", "SECAM", null, null, null)] // unsupported standard
+    [InlineData("EDGE", "PAL", null, null, null)] // video settings on an edge trigger
+    public void RejectsInvalidVideoSettings(string type, string? standard, string? sync, int? line, int? field) =>
+        Assert.Throws<ArgumentException>(() => SiglentScope.BuildTriggerSelect(Current("EDGE,SR,C1,HT,OFF"),
+            new TriggerUpdate(Type: type, VideoStandard: standard, VideoSync: sync, VideoLine: line, VideoField: field)));
+
+    [Fact]
+    public void RejectsTimeConditionOnWindowTrigger() =>
+        Assert.Throws<ArgumentException>(() => SiglentScope.BuildTriggerSelect(Current("EDGE,SR,C1,HT,OFF"), new TriggerUpdate(Type: "WIN", HoldType: "TI")));
+
+    [Fact]
+    public void BuildsPatternFromCurrentAndChanges() =>
+        Assert.Equal("TRPA C1,H,C2,X,STATE,NOR", SiglentScope.BuildPattern(
+            SiglentScope.ParsePattern("C1,X,C2,X,STATE,AND"),
+            new TriggerUpdate(PatternStates: new Dictionary<string, string> { ["c1"] = "h" }, PatternLogic: "nor")));
 
     [Fact]
     public void FormatsFrameTime() => Assert.Equal("00:26:45.388406", SiglentScope.FormatFrameTime("FTIM 00: 26: 45. 388406"));

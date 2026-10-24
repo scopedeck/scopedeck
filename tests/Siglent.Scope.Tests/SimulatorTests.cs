@@ -95,6 +95,53 @@ public sealed class SimulatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WindowTriggerRemembersItsSourceAndUsesBothLevels()
+    {
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(Type: "WIN", Source: "C2", Level: 2.5, Level2: 0.5));
+
+        var t = (await _scope.GetSettingsAsync()).Trigger;
+
+        // The scope only reports "WIN"; the source comes from what the app set.
+        Assert.Equal(("WIN", "C2", 2.5, 0.5), (t.Type, t.Source, t.Level, t.Level2));
+    }
+
+    [Fact]
+    public async Task PatternTriggerSetsStatesAndLogic()
+    {
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(
+            Type: "PA",
+            PatternStates: new Dictionary<string, string> { ["C1"] = "H", ["C2"] = "L" },
+            PatternLogic: "NAND"));
+
+        // Reading the settings must not send the level queries the scope leaves unanswered in pattern mode.
+        var p = (await _scope.GetSettingsAsync()).Trigger.Pattern!;
+
+        Assert.Equal(("H", "L", "NAND"), (p.States["C1"], p.States["C2"], p.Logic));
+    }
+
+    [Fact]
+    public async Task SettingsCanBeReadInEveryTriggerType()
+    {
+        // Guards against queries the scope does not answer in a given type (they would time out).
+        foreach (var type in new[] { "EDGE", "GLIT", "SLEW", "INTV", "RUNT", "DROP", "WIN", "PA", "TV" })
+        {
+            await _scope.UpdateTriggerAsync(new TriggerUpdate(Type: type));
+            Assert.Equal(type, (await _scope.GetSettingsAsync()).Trigger.Type);
+        }
+    }
+
+    [Fact]
+    public async Task VideoTriggerRoundTrip()
+    {
+        await _scope.UpdateTriggerAsync(new TriggerUpdate(Type: "TV", VideoStandard: "PAL", VideoSync: "SELECT", VideoLine: 300, VideoField: 2));
+
+        var t = (await _scope.GetSettingsAsync()).Trigger;
+
+        Assert.Equal(("TV", "C1"), (t.Type, t.Source));
+        Assert.Equal(new VideoTrigger("PAL", "SELECT", 300, 2), t.Video);
+    }
+
+    [Fact]
     public async Task ChangesAcquisitionAndBandwidthLimit()
     {
         await _scope.UpdateAcquisitionAsync(new AcquisitionUpdate(Mode: "average", Averages: 64, MemoryDepth: "700k", SinXInterpolation: false));
