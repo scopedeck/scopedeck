@@ -1,0 +1,9 @@
+name = "scopedeck-stats"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scopedeck-stats"
+database_id = "6750c4ca-5bc3-4909-9753-7d7fd60d06fe"

@@ -97,8 +97,11 @@ dotnet publish src/Siglent.Server -c Release -r linux-x64 -p:PublishSingleFile=t
 ```
 
 **Update check:** on start, ScopeDeck asks GitHub once whether a newer release exists and shows an *Update available*
-badge next to the version (pre-release builds are offered newer pre-releases too). Only the request itself is sent.
-Switch it off with `"UpdateCheck": { "Enabled": false }` in `appsettings.json`; builds from source (`-dev`) never check.
+badge next to the version (pre-release builds are offered newer pre-releases too). At the same time it sends a ping
+that counts app starts, so we can see how many people use which version: it records only the day, ScopeDeck version,
+OS, CPU architecture (x64/arm64), desktop app or server, and the country Cloudflare derives from the connection. No IP
+address, ID or anything about your scope is stored. Turn the ping off with `"UpdateCheck": { "Count": false }` in
+`appsettings.json`, or switch off both with `"Enabled": false`. Builds from source (`-dev`) never check.
 In the Windows desktop app, clicking the badge offers **Update now**: the matching zip is downloaded, checked against
 the SHA-256 checksum GitHub publishes, and installed over the running app (the running exe is renamed to `.old` and
 removed on the next start; on any error it is put back). Your `appsettings.json` is kept. The folder must be writable

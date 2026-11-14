@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 
 namespace Siglent.Server;
@@ -15,10 +16,13 @@ public sealed record UpdateInfo(string Current, string? Latest, string? Url, boo
 /// Asks GitHub once per run whether a newer release exists. Pre-release builds are offered newer pre-releases
 /// and releases; release builds only releases. Local builds ("-dev") and disabled checks never contact GitHub.
 /// Failures (offline, rate limit) simply report no update.
+/// Alongside the check, a ping to ScopeDeck's counter records the app start (version, OS, architecture, desktop or
+/// server; no IP or ID is stored). UpdateCheck:Count = false skips the ping.
 /// </summary>
 public sealed class UpdateChecker(IConfiguration config, ILogger<UpdateChecker> logger)
 {
     private const string ReleasesUrl = "https://api.github.com/repos/scopedeck/scopedeck/releases?per_page=20";
+    private const string PingUrl = "https://scopedeck-stats.getcoffer.workers.dev/ping";
 
     private readonly Lazy<Task<UpdateInfo>> _result = new(() => CheckAsync(config, logger));
 
@@ -37,7 +41,12 @@ public sealed class UpdateChecker(IConfiguration config, ILogger<UpdateChecker> 
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd($"ScopeDeck/{CurrentVersion}");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            var releases = await http.GetFromJsonAsync<Release[]>(ReleasesUrl) ?? [];
+            var ping = config.GetValue("UpdateCheck:Count", true)
+                ? PingAsync(http, PingQuery(config.GetValue("UpdateCheck:PingUrl", PingUrl)!))
+                : Task.CompletedTask;
+            Release[] releases;
+            try { releases = await http.GetFromJsonAsync<Release[]>(ReleasesUrl) ?? []; }
+            finally { await ping; }   // the ping never throws; finish it before the client is disposed
             return Pick(CurrentVersion, releases) is { } newest
                 ? new UpdateInfo(CurrentVersion, newest.TagName.TrimStart('v'), newest.HtmlUrl, true) { Assets = newest.Assets ?? [] }
                 : none;
@@ -47,6 +56,21 @@ public sealed class UpdateChecker(IConfiguration config, ILogger<UpdateChecker> 
             logger.LogInformation("Update check skipped: {Message}", e.Message);
             return none;
         }
+    }
+
+    private static async Task PingAsync(HttpClient http, string url)
+    {
+        try { (await http.GetAsync(url)).Dispose(); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or ObjectDisposedException) { }
+    }
+
+    /// <summary>The ping URL with everything that is counted: app version, OS, CPU architecture, desktop app or server.</summary>
+    internal static string PingQuery(string pingUrl)
+    {
+        string os = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsLinux() ? "linux" : "other";
+        string arch = RuntimeInformation.OSArchitecture switch { Architecture.X64 => "x64", Architecture.Arm64 => "arm64", _ => "other" };
+        string kind = Assembly.GetEntryAssembly()?.GetName().Name == "ScopeDeck" ? "desktop" : "server";
+        return $"{pingUrl}?v={Uri.EscapeDataString(CurrentVersion)}&os={os}&arch={arch}&kind={kind}";
     }
 
     /// <summary>The newest release that is newer than <paramref name="current"/>, or null.</summary>

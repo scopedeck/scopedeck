@@ -1,0 +1,46 @@
+name: Usage stats
+
+# Daily snapshot of release downloads, repo traffic and update-check counts into the `stats` branch.
+# GitHub keeps traffic for 14 days only; this keeps the history. See stats/snapshot.py.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: stats
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: stats/snapshot.py
+          sparse-checkout-cone-mode: false
+          path: src
+      - name: Check out the stats branch (created on the first run)
+        run: |
+          if git ls-remote --exit-code --heads "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" stats; then
+            git clone --depth 1 --branch stats "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" data
+          else
+            git init -b stats data
+            git -C data remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
+          fi
+      - run: python3 src/stats/snapshot.py data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_STATS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      - name: Commit
+        working-directory: data
+        run: |
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet || git commit -m "Stats $(date -u +%F)"
+          git push origin stats

@@ -42,4 +42,15 @@ public class UpdateCheckerTests
     [Fact]
     public void PreReleaseBuildIsOfferedTheFinalRelease() =>
         Assert.Equal("v0.1.0", UpdateChecker.Pick("0.1.0-rc.3", [.. Releases, R("v0.1.0")])?.TagName);
+
+    [Fact]
+    public void PingQueryCarriesOnlyVersionOsArchAndKind()
+    {
+        var uri = new Uri(UpdateChecker.PingQuery("https://counter.example/ping"));
+        var keys = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        Assert.Equal(["v", "os", "arch", "kind"], keys.AllKeys);
+        Assert.Equal(UpdateChecker.CurrentVersion, keys["v"]);
+        Assert.Contains(keys["os"], new[] { "windows", "macos", "linux", "other" });
+        Assert.Contains(keys["arch"], new[] { "x64", "arm64", "other" });
+    }
 }
