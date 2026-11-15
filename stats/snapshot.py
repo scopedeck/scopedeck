@@ -2,6 +2,7 @@
 
 Writes CSV files into the directory given as the first argument (the `stats` branch):
   downloads.csv  date,tag,asset,downloads      cumulative download count of every release file, per day
+  releases.csv   tag,published,prerelease      every release with its publish date (yes/no for prerelease)
   views.csv      day,count,uniques             GitHub repo page views per day   (needs TRAFFIC_TOKEN)
   clones.csv     day,count,uniques             git clones per day                (needs TRAFFIC_TOKEN)
   referrers.csv  date,referrer,count,uniques   top referrers over the last 14 days, as seen on `date`
@@ -53,6 +54,8 @@ while batch := get(f"https://api.github.com/repos/{REPO}/releases?per_page=100&p
     page += 1
 merge("downloads.csv", ["date", "tag", "asset", "downloads"],
       [[TODAY, r["tag_name"], a["name"], a["download_count"]] for r in releases for a in r["assets"]], 3)
+merge("releases.csv", ["tag", "published", "prerelease"],
+      [[r["tag_name"], (r["published_at"] or "")[:10], "yes" if r["prerelease"] else "no"] for r in releases], 1)
 
 if traffic := os.environ.get("TRAFFIC_TOKEN"):
     base = f"https://api.github.com/repos/{REPO}/traffic"
