@@ -1,3 +1,7 @@
 day,version,os,arch,kind,country,n
 2026-11-14,0.1.1,windows,x64,desktop,UA,1
 2026-11-18,0.1.1,windows,x64,desktop,FR,1
+2026-11-19,0.1.1,windows,x64,desktop,AZ,1
+2026-11-19,0.1.1,windows,x64,desktop,BR,2
+2026-11-19,0.1.1,windows,x64,desktop,CA,1
+2026-11-19,0.1.1,windows,x64,desktop,US,2

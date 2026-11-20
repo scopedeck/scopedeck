@@ -59,3 +59,13 @@ date,path,count,uniques
 2026-11-19,/scopedeck/scopedeck/releases,3,3
 2026-11-19,/scopedeck/scopedeck/tree/main/docs,2,1
 2026-11-19,/scopedeck/scopedeck/tree/main/src,2,1
+2026-11-20,/scopedeck/scopedeck,14,7
+2026-11-20,/scopedeck/scopedeck/blob/main/README.md,1,1
+2026-11-20,/scopedeck/scopedeck/blob/main/docs/images/front-panel.png,2,1
+2026-11-20,/scopedeck/scopedeck/blob/main/docs/images/live-cursors.png,1,1
+2026-11-20,/scopedeck/scopedeck/blob/main/docs/images/mask-test.png,1,1
+2026-11-20,/scopedeck/scopedeck/blob/main/docs/index.html,1,1
+2026-11-20,/scopedeck/scopedeck/blob/main/src/Siglent.Simulator/FakeScopeServer.cs,1,1
+2026-11-20,/scopedeck/scopedeck/releases,9,7
+2026-11-20,/scopedeck/scopedeck/tree/main/docs,2,1
+2026-11-20,/scopedeck/scopedeck/tree/main/src,2,1
